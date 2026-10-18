@@ -19,7 +19,8 @@ def main():
     http=server.ThreadingHTTPServer(("127.0.0.1",8765),server.Handler)
     threading.Thread(target=http.serve_forever,daemon=True).start()
     local="http://127.0.0.1:8765/open/"+server.KEY
-    print("Music Lab 0.6.0 is running.",flush=True)
+    threading.Thread(target=server.warm_search,daemon=True).start()
+    print("Music Lab 0.6.1 is running.",flush=True)
     print("Computer: "+local,flush=True)
     if not args.no_browser:webbrowser.open(local)
     tunnel=None
@@ -55,3 +56,4 @@ def main():
         if tunnel:tunnel.terminate()
         http.shutdown()
 if __name__=="__main__":main()
+
