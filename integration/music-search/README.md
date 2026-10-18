@@ -1,4 +1,4 @@
-# Music Lab 0.6.2 — поиск SoundCloud и единый плеер
+# Music Lab 0.6.3 — поиск SoundCloud и единый плеер
 ## Запуск
 1. Распаковать архив.
 2. Дважды нажать START.cmd. Python уже установлен на тестовом Windows-ПК пользователя.
@@ -97,4 +97,8 @@ Bandcamp в этой версии не подключён. Цель — один
 - [ ] На iPhone проверить поиск, перелистывание, отображение исполнителя и пометку превью.
 
 Live Chrome regression (0.6.2): 10 real search results; HLS playback currentTime > 1 s, duration 247.274705 s; like, active playlist row and pause passed; no page errors. Full-track playback and iPhone background mode were not tested.
+
+
+## 0.6.3 — исправление запуска
+Устаревшая /open/ ссылка возвращает HTML с инструкцией открыть текущую ссылку Computer, включая случай сохранённой cookie. /index.html поддерживается как адрес интерфейса. При EADDRINUSE/10048 launcher выбирает свободный порт и использует его для браузера и туннеля. Шесть unit/HTTP тестов пройдены; повторный запуск с конфликтом порта на ПК пользователя требует проверки.
 

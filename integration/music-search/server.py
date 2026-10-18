@@ -95,17 +95,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             p=urlparse(self.path)
-            if p.path.startswith("/open/") and hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
+            if p.path.startswith("/open/"):
+                if not hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
+                    self.respond(403,"""<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Music Lab</title><body style="background:#10131e;color:white;font:18px system-ui;padding:32px"><h1>Ссылка запуска устарела</h1><p>Открой ссылку Computer из текущего окна START.cmd. При каждом запуске Music Lab создаёт новую личную ссылку.</p></body></html>""".encode(),"text/html; charset=utf-8")
+                    return
                 self.respond(302,headers={"Location":"/","Set-Cookie":"musiclab_access="+KEY+"; HttpOnly; SameSite=Lax; Path=/"})
                 return
             if not self.authenticated():
                 self.respond(403,{"error":"Открой личную ссылку из окна запуска Music Lab."});return
-            if p.path=="/":
+            if p.path in ("/","/index.html"):
                 self.respond(200,(ROOT/"index.html").read_bytes(),"text/html; charset=utf-8");return
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.6.2"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.6.3"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -158,7 +161,7 @@ if __name__=="__main__":
     a=argparse.ArgumentParser();a.add_argument("--port",type=int,default=8765);args=a.parse_args()
     server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.6.2 — SoundCloud",flush=True)
+    print("Music Lab v0.6.3 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()
