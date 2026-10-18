@@ -10,11 +10,9 @@ import yt_dlp
 ROOT=Path(__file__).resolve().parent
 KEY=os.environ.get("MUSICLAB_ACCESS_KEY") or secrets.token_urlsafe(24)
 LOCK=threading.RLock()
-SEARCH=OrderedDict(); STREAMS={}; MEDIA=OrderedDict()
-WORKERS=threading.BoundedSemaphore(2)
+STREAMS={}; MEDIA=OrderedDict()
 SC_LOCK=threading.Lock()
 SC_CLIENT=None
-PAGE_SIZE=10
 class Quiet:
     def debug(self,*a): pass
     def warning(self,*a): pass
@@ -45,44 +43,23 @@ def initialize_search():
         SC_CLIENT=(client,extractor)
     return SC_CLIENT[1]
 
+def search_credentials(expired=None):
+    # Serialize credential bootstrap/refresh only, never ordinary searches.
+    with SC_LOCK:
+        extractor=initialize_search()
+        if expired is not None and extractor._CLIENT_ID==expired:
+            extractor._update_client_id()
+        return extractor._CLIENT_ID
+
+from search_service import SearchService
+SEARCH_SERVICE=SearchService(search_credentials)
+
 def warm_search():
-    try:
-        with SC_LOCK: initialize_search()
-    except Exception:
-        pass  # A later explicit search retries initialization and reports errors.
+    try: search_credentials()
+    except Exception: pass
 
 def search(q,page=1):
-    if not isinstance(page,int) or not 1<=page<=100: raise ValueError("Invalid page")
-    cache_key=(" ".join(q.casefold().split()),page)
-    with LOCK:
-        hit=SEARCH.get(cache_key)
-        if hit and time.time()-hit[0]<300: return hit[1]
-    if not WORKERS.acquire(blocking=False): raise RuntimeError("Сервер занят. Повтори поиск через несколько секунд.")
-    try:
-        with SC_LOCK:
-            extractor=initialize_search()
-            # One metadata request for the requested page, no per-track extraction.
-            data=extractor._call_api(
-                extractor._API_V2_BASE+"search/tracks",q,
-                query={"q":q,"limit":PAGE_SIZE+1,"offset":(page-1)*PAGE_SIZE,"linked_partitioning":1},
-                headers=extractor._HEADERS)
-            raw=[t for t in data.get("collection",[]) if t]
-            entries=[extractor._extract_info_dict(t,extract_flat=True) for t in raw[:PAGE_SIZE]]
-        items=[]
-        for t in entries:
-            if not t: continue
-            art=t.get("thumbnail") or next((x.get("url") for x in reversed(t.get("thumbnails") or []) if x.get("url")),"")
-            duration=t.get("duration") or 0
-            items.append(dict(id=str(t["id"]),title=t.get("track") or t.get("title") or "Без названия",
-                artist=t.get("artist") or t.get("uploader") or "SoundCloud",source="soundcloud",
-                duration=duration,preview=0<duration<=30,permalink=t.get("webpage_url") or "",
-                artwork={"480x480":art} if art else None))
-        result={"data":items,"page":page,"page_size":PAGE_SIZE,"has_more":len(raw)>PAGE_SIZE}
-        with LOCK:
-            SEARCH[cache_key]=(time.time(),result)
-            while len(SEARCH)>100: SEARCH.popitem(last=False)
-        return result
-    finally: WORKERS.release()
+    return SEARCH_SERVICE.search(q,page)
 
 def stream(track_id):
     if not re.fullmatch(r"[0-9]{1,20}",track_id): raise ValueError("Invalid track ID")
@@ -128,7 +105,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.6.1"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.6.2"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -181,7 +158,7 @@ if __name__=="__main__":
     a=argparse.ArgumentParser();a.add_argument("--port",type=int,default=8765);args=a.parse_args()
     server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.6.1 — SoundCloud",flush=True)
+    print("Music Lab v0.6.2 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()
