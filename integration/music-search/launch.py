@@ -1,5 +1,5 @@
 """Run Music Lab locally and provide an optional temporary HTTPS link."""
-import argparse, errno, os, re, subprocess, sys, threading, time, urllib.request, webbrowser
+import argparse, os, re, subprocess, sys, threading, time, urllib.request, webbrowser
 from pathlib import Path
 import server
 
@@ -16,18 +16,11 @@ def main():
             raise RuntimeError("HLS player checksum mismatch")
         (ROOT/"hls.min.js").write_bytes(data)
         urllib.request.urlretrieve("https://raw.githubusercontent.com/video-dev/hls.js/v1.6.13/LICENSE",ROOT/"HLS-LICENSE.txt")
-    try:
-        http=server.ThreadingHTTPServer(("127.0.0.1",8765),server.Handler)
-    except OSError as exc:
-        if exc.errno != errno.EADDRINUSE and getattr(exc,"winerror",None) != 10048:
-            raise
-        print("Port 8765 is in use. Starting this version on a free local port.",flush=True)
-        http=server.ThreadingHTTPServer(("127.0.0.1",0),server.Handler)
-    origin="http://127.0.0.1:"+str(http.server_port)
+    http=server.ThreadingHTTPServer(("127.0.0.1",8765),server.Handler)
     threading.Thread(target=http.serve_forever,daemon=True).start()
-    local=origin+"/open/"+server.KEY
+    local="http://127.0.0.1:8765/open/"+server.KEY
     threading.Thread(target=server.warm_search,daemon=True).start()
-    print("Music Lab 0.6.3 is running.",flush=True)
+    print("Music Lab 0.6.2 is running.",flush=True)
     print("Computer: "+local,flush=True)
     if not args.no_browser:webbrowser.open(local)
     tunnel=None
@@ -41,7 +34,7 @@ def main():
                 urllib.request.urlretrieve("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",temp)
                 temp.replace(exe)
             flags=subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0
-            tunnel=subprocess.Popen([str(exe),"tunnel","--url",origin,"--no-autoupdate","--protocol","http2"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding="utf-8",errors="replace",creationflags=flags)
+            tunnel=subprocess.Popen([str(exe),"tunnel","--url","http://127.0.0.1:8765","--no-autoupdate","--protocol","http2"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding="utf-8",errors="replace",creationflags=flags)
             found=False
             for line in tunnel.stdout:
                 match=re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",line)
