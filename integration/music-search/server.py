@@ -4,13 +4,16 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
-from urllib.request import Request, urlopen
+import httpx
 import yt_dlp
 
 ROOT=Path(__file__).resolve().parent
 KEY=os.environ.get("MUSICLAB_ACCESS_KEY") or secrets.token_urlsafe(24)
 LOCK=threading.RLock()
-STREAMS={}; MEDIA=OrderedDict()
+MEDIA=OrderedDict()
+MEDIA_CLIENT=httpx.Client(http2=True,timeout=httpx.Timeout(25,connect=5),
+    limits=httpx.Limits(max_connections=12,max_keepalive_connections=8),
+    headers={"User-Agent":"Mozilla/5.0","Accept-Encoding":"identity"})
 SC_LOCK=threading.Lock()
 SC_CLIENT=None
 class Quiet:
@@ -52,7 +55,9 @@ def search_credentials(expired=None):
         return extractor._CLIENT_ID
 
 from search_service import SearchService
+from stream_service import StreamService
 SEARCH_SERVICE=SearchService(search_credentials)
+STREAM_SERVICE=StreamService(SEARCH_SERVICE,media_token)
 
 def warm_search():
     try: search_credentials()
@@ -62,21 +67,13 @@ def search(q,page=1):
     return SEARCH_SERVICE.search(q,page)
 
 def stream(track_id):
-    if not re.fullmatch(r"[0-9]{1,20}",track_id): raise ValueError("Invalid track ID")
-    with LOCK:
-        hit=STREAMS.get(track_id)
-        if hit and time.time()-hit[0]<600: return hit[1]
-    with yt_dlp.YoutubeDL(options()) as y:
-        info=y.extract_info("https://api.soundcloud.com/tracks/"+track_id,download=False)
-    formats=[f for f in info.get("formats",[]) if f.get("url") and not f.get("has_drm") and f.get("vcodec") in (None,"none") and f.get("protocol") in ("m3u8_native","m3u8","https","http")]
-    if not formats: raise RuntimeError("Для этого трека нет доступного публичного потока.")
-    f=formats[-1]
-    result=media_token(f["url"])
-    with LOCK: STREAMS[track_id]=(time.time(),result)
-    return result
+    return STREAM_SERVICE.resolve(track_id)
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
+    def handle(self):
+        try: super().handle()
+        except ConnectionError: pass  # Browser cancelled a segment or closed keep-alive.
     def log_message(self,*args): pass
     def respond(self,status,body=b"",content_type="application/json; charset=utf-8",headers=None):
         if isinstance(body,(dict,list)): body=json.dumps(body,ensure_ascii=False).encode()
@@ -105,7 +102,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.0"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.1"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -129,21 +126,27 @@ class Handler(BaseHTTPRequestHandler):
                 token=p.path.rsplit("/",1)[-1]
                 with LOCK: entry=MEDIA.get(token)
                 if not entry or time.time()-entry[1]>3600: self.respond(410,{"error":"Поток устарел. Выбери трек заново."});return
-                headers={"User-Agent":"Mozilla/5.0"}
+                headers={}
                 if self.headers.get("Range"): headers["Range"]=self.headers["Range"]
-                with urlopen(Request(entry[0],headers=headers),timeout=25) as r:
+                with MEDIA_CLIENT.stream('GET',entry[0],headers=headers) as r:
+                    r.raise_for_status()
                     kind=r.headers.get("Content-Type","application/octet-stream")
                     is_playlist="mpegurl" in kind.lower() or ".m3u8" in urlparse(entry[0]).path
                     if is_playlist:
-                        text=r.read(2*1024*1024).decode("utf-8")
+                        chunks=[];size=0
+                        for chunk in r.iter_bytes(16*1024):
+                            size+=len(chunk)
+                            if size>2*1024*1024:raise ValueError('Manifest too large')
+                            chunks.append(chunk)
+                        text=b''.join(chunks).decode("utf-8")
                         lines=[]
                         for line in text.splitlines():
-                            if line and not line.startswith("#"): line=media_token(urljoin(r.url,line))
+                            if line and not line.startswith("#"): line=media_token(urljoin(str(r.url),line))
                             elif 'URI="' in line:
-                                line=re.sub(r'URI="([^"]+)"',lambda m:'URI="'+media_token(urljoin(r.url,m.group(1)))+'"',line)
+                                line=re.sub(r'URI="([^"]+)"',lambda m:'URI="'+media_token(urljoin(str(r.url),m.group(1)))+'"',line)
                             lines.append(line)
                         self.respond(200,("\n".join(lines)+"\n").encode(),"application/vnd.apple.mpegurl");return
-                    self.send_response(r.status);self.send_header("Content-Type",kind);self.send_header("Cache-Control","private, max-age=120")
+                    self.send_response(r.status_code);self.send_header("Content-Type",kind);self.send_header("Cache-Control","private, max-age=120")
                     length=r.headers.get("Content-Length")
                     if length:self.send_header("Content-Length",length)
                     else:self.send_header("Connection","close");self.close_connection=True
@@ -151,23 +154,21 @@ class Handler(BaseHTTPRequestHandler):
                         if r.headers.get(name):self.send_header(name,r.headers[name])
                     self.end_headers()
                     if self.command!="HEAD":
-                        while True:
-                            chunk=r.read(128*1024)
-                            if not chunk:break
+                        for chunk in r.iter_raw(16*1024):
                             self.wfile.write(chunk)
                     return
             self.respond(404,{"error":"Not found"})
-        except (BrokenPipeError,ConnectionResetError): pass
+        except ConnectionError: pass
         except Exception as e:
             # URLs and upstream access data are never sent to the browser.
             try:self.respond(502,{"error":"Не удалось получить музыку. Источник может ограничивать этот трек; попробуй другой результат.","code":type(e).__name__})
-            except (BrokenPipeError,ConnectionResetError):pass
+            except ConnectionError:pass
 
 if __name__=="__main__":
     a=argparse.ArgumentParser();a.add_argument("--port",type=int,default=8765);args=a.parse_args()
     server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.7.0 — SoundCloud",flush=True)
+    print("Music Lab v0.7.1 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()

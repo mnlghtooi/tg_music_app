@@ -16,6 +16,7 @@ class SearchService:
         self.lock = threading.Lock()
         self.cache = OrderedDict()
         self.pending = {}
+        self.track_metadata = OrderedDict()
         self.slots = threading.BoundedSemaphore(4)
 
     def search(self, query, page=1):
@@ -36,7 +37,33 @@ class SearchService:
                 credential = self.credentials(credential)
                 continue
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            self.remember_tracks(data)
+            return data
+
+    def remember_tracks(self, data):
+        if isinstance(data, list):
+            entries = data
+        elif isinstance(data, dict):
+            entries = data.get('collection', data.get('tracks', [data]))
+        else:
+            return
+        with self.lock:
+            for track in entries:
+                if not isinstance(track, dict) or not track.get('id') or not track.get('media'):
+                    continue
+                key = str(track['id'])
+                self.track_metadata[key] = (time.monotonic(), track)
+                self.track_metadata.move_to_end(key)
+            while len(self.track_metadata) > 1000:
+                self.track_metadata.popitem(last=False)
+
+    def get_track(self, track_id):
+        with self.lock:
+            hit = self.track_metadata.get(track_id)
+            if hit and time.monotonic() - hit[0] < 300:
+                return hit[1]
+        return self._get('tracks/' + track_id)
 
     def _search(self, query, page):
         self.validate_page(page)
@@ -128,5 +155,6 @@ class SearchService:
                 "artist": (track.get("publisher_metadata") or {}).get("artist")
                           or (track.get("user") or {}).get("username") or "SoundCloud",
                 "source": "soundcloud", "duration": duration, "preview": preview,
+                "unavailable": track.get('policy') == 'BLOCK',
                 "permalink": track.get("permalink_url") or "",
                 "artwork": {"480x480": art.replace("-large.", "-t500x500.")} if art else None}
