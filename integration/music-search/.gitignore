@@ -1,0 +1,7 @@
+.venv/
+.tools/
+.cache/
+__pycache__/
+.private/
+hls.min.js
+HLS-LICENSE.txt
