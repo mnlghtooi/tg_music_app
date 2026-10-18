@@ -1,103 +1,47 @@
 <!doctype html>
-<html lang="ru">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#10131e">
-<title>Music Lab v0.2 — проверка очереди</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}
-*{box-sizing:border-box}body{background:#10131e;color:#f8fafc;margin:0;padding:24px 16px 55px}
-main{max-width:470px;margin:auto}.muted{color:#a5b4c8;line-height:1.5}h1{font-size:28px;margin:6px 0}
-.cover{height:175px;border-radius:22px;background:linear-gradient(120deg,#6d28d9,#0d9488);display:grid;place-items:center;font-size:72px;margin:20px 0}
-button{border:0;border-radius:50px;background:#8b5cf6;color:white;font-weight:700;padding:15px 19px;font-size:17px}
-button:active{transform:scale(.97)}.controls{display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin:20px 0}
-input[type=range]{width:100%;accent-color:#a78bfa}
-.times{display:flex;justify-content:space-between;color:#a5b4c8;font-variant-numeric:tabular-nums}
-section{border:1px solid #334155;padding:15px;margin-top:17px;border-radius:16px}h2{font-size:16px;margin:0 0 12px}
-.track{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:11px;gap:8px;background:#1c2231;margin-top:7px}
-.track.active{outline:2px solid #9d83ff}.track button{padding:8px 12px;font-size:12px;background:#334155}
-#log{white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow:auto;font-size:12px;color:#becada}
-#status{color:#c4b5fd;font-weight:650}
-</style>
-</head>
-<body>
-<main>
-<div class="muted">Telegram Mini App · v0.2.1</div>
-<h1>Music Lab 🎧</h1>
-<div class="cover" id="cover">🎹</div>
-<div id="trackTitle" style="font-size:21px;font-weight:700">Загрузка…</div>
-<div class="muted" id="subtitle">Три тестовые мелодии</div>
-<div class="controls">
-<button id="prev">⏮ Назад</button><button id="play">▶ Play</button><button id="next">Далее ⏭</button>
-</div>
-<input type="range" id="seek" min="0" max="18" step=".1" value="0" aria-label="Перемотка">
-<div class="times"><span id="time">0:00</span><span id="total">0:18</span></div>
-<section><h2>Очередь</h2><div id="queue"></div></section>
-<section><h2>Проверка на iPhone</h2>
-<div id="status">Готовим звук…</div>
-<p class="muted">Нажми Play и заблокируй экран минимум на 70 секунд. У каждой мелодии длительность 18 секунд: за это время очередь должна переключиться несколько раз. После разблокировки проверь название, положение дорожки и журнал событий. Попробуй ⏭ на экране блокировки или в наушниках.</p>
-</section>
-<section><h2>Журнал событий</h2><pre id="log"></pre></section>
-<audio id="audio" preload="auto" playsinline></audio>
-</main>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10131e"><title>Music Lab v0.3</title><script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}*{box-sizing:border-box}body{background:#10131e;color:#f8fafc;margin:0;padding:24px 16px 55px}main{max-width:470px;margin:auto}.muted{color:#a5b4c8;line-height:1.5}h1{font-size:28px;margin:6px 0}.cover{height:190px;border-radius:22px;background:linear-gradient(120deg,#6d28d9,#0d9488);display:grid;place-items:center;font-size:65px;margin:20px 0;background-size:cover;background-position:center}button{border:0;border-radius:50px;background:#8b5cf6;color:white;font-weight:700;padding:14px 17px;font-size:16px}button:disabled{opacity:.6}.controls{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:20px 0}input[type=range]{width:100%;accent-color:#a78bfa}.times{display:flex;justify-content:space-between;color:#a5b4c8;font-variant-numeric:tabular-nums}section{border:1px solid #334155;padding:15px;margin-top:17px;border-radius:16px}h2{font-size:16px;margin:0 0 12px}.track{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:11px;gap:8px;background:#1c2231;margin-top:7px}.track.active{outline:2px solid #9d83ff}.track button{padding:8px 12px;font-size:12px;background:#334155;flex-shrink:0}.track span{min-width:0;overflow-wrap:anywhere}#log{white-space:pre-wrap;overflow-wrap:anywhere;max-height:210px;overflow:auto;font-size:12px;color:#becada}#status{color:#c4b5fd;font-weight:650}.search{display:flex;gap:8px}.search input{background:#1c2231;color:white;border:1px solid #48526a;border-radius:12px;padding:12px;min-width:0;flex:1;font-size:16px}.minor{background:#334155;font-size:13px;padding:9px 12px;margin-top:10px}.footer{font-size:12px;color:#94a3b8;margin-top:20px}</style></head><body><main>
+<div class="muted">Telegram Mini App · v0.3</div><h1>Music Lab 🎧</h1>
+<section><h2>🎵 Поиск музыки в Audius</h2><div class="search"><input id="query" placeholder="Название или исполнитель" value="electronic" aria-label="Поиск музыки"><button id="search">Найти</button></div><button id="trending" class="minor">Популярные треки</button> <button id="demo" class="minor">Тестовые мелодии</button><div class="muted" id="searchStatus" style="margin-top:9px">Выбери «Популярные треки» или введи запрос.</div></section>
+<div class="cover" id="cover">🎵</div><div id="trackTitle" style="font-size:21px;font-weight:700">Пока ничего не играет</div><div class="muted" id="subtitle">Выбери композицию</div>
+<div class="controls"><button id="prev">⏮ Назад</button><button id="play">▶ Play</button><button id="next">Далее ⏭</button></div>
+<input type="range" id="seek" min="0" max="18" step=".1" value="0" aria-label="Перемотка"><div class="times"><span id="time">0:00</span><span id="total">0:00</span></div>
+<section><h2>Очередь</h2><div id="queue"></div></section><section><h2>Состояние плеера</h2><div id="status">Готово</div><p class="muted">Для теста запусти реальный трек и заблокируй iPhone. Проверь автоматический переход и кнопки Next/Previous на экране блокировки.</p></section><section><h2>Журнал событий</h2><pre id="log"></pre></section><div class="footer">Музыкальный каталог: <a href="https://audius.co" target="_blank" rel="noopener" style="color:#c4b5fd">Audius</a>. Это технический прототип, не сервис загрузки музыкальных файлов.</div><audio id="audio" preload="auto" playsinline></audio></main>
 <script>
 (()=>{
-const $=id=>document.getElementById(id);
-const audio=$('audio'),duration=18,rate=11025;
-const tracks=[
-{title:'01 · Violet Pulse',subtitle:'Синтезатор · ля минор',notes:[220,261.63,329.63,392,329.63,261.63,246.94,293.66],icon:'🎹'},
-{title:'02 · Green Drift',subtitle:'Синтезатор · до мажор',notes:[261.63,329.63,392,523.25,392,349.23,329.63,293.66],icon:'🌿'},
-{title:'03 · Night Lights',subtitle:'Синтезатор · ми минор',notes:[164.81,196,246.94,329.63,293.66,246.94,196,164.81],icon:'🌙'}
-];
-let index=0,urls=[],operation=0;
-function log(message){$('log').textContent='['+new Date().toLocaleTimeString()+'] '+message+'\n'+$('log').textContent;}
-function status(message){$('status').textContent=message;log(message);}
-function time(s){return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');}
-function wav(notes){const count=rate*duration,buf=new ArrayBuffer(44+count*2),v=new DataView(buf);let off=0;function str(s){for(const c of s)v.setUint8(off++,c.charCodeAt(0));}function u32(n){v.setUint32(off,n,true);off+=4;}function u16(n){v.setUint16(off,n,true);off+=2;}
-str('RIFF');u32(36+count*2);str('WAVEfmt ');u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);str('data');u32(count*2);
-for(let i=0;i<count;i++){const t=i/rate,step=Math.floor(t*2.5),f=notes[step%notes.length],env=.35+.65*Math.exp(-((t*2.5)%1)*2),fade=Math.min(1,t*4,(duration-t)*4),s=.25*env*fade*(Math.sin(2*Math.PI*f*t)+.17*Math.sin(4*Math.PI*f*t));v.setInt16(off,Math.max(-1,Math.min(1,s))*32767,true);off+=2;}
-return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));}
-function render(){const track=tracks[index];$('trackTitle').textContent=track.title;$('subtitle').textContent=track.subtitle;$('cover').textContent=track.icon;
-$('queue').replaceChildren(...tracks.map((t,i)=>{const div=document.createElement('div');div.className='track'+(i===index?' active':'');const label=document.createElement('span');label.textContent=t.icon+' '+t.title;const btn=document.createElement('button');btn.textContent=i===index?'Сейчас':'Выбрать';btn.onclick=()=>switchTo(i,true);div.append(label,btn);return div;}));
-if('mediaSession'in navigator){navigator.mediaSession.metadata=new MediaMetadata({title:track.title,artist:'Music Lab · тест',album:'Background Playback Test'});}
-}
-async function switchTo(n,autoplay){const token=++operation;index=(n+tracks.length)%tracks.length;audio.pause();audio.src=urls[index];audio.load();render();log('Переход к '+tracks[index].title+'; autoplay='+autoplay);
-if(autoplay){try{await audio.play();if(token===operation)status('▶ Играет '+tracks[index].title);}catch(e){status('Автопереход заблокирован: '+e.message);}}else status('Готово: '+tracks[index].title);}
-$('play').onclick=async()=>{if(!audio.paused){audio.pause();return;}try{await audio.play();status('▶ Играет '+tracks[index].title);}catch(e){status('Ошибка запуска: '+e.message);}};
-$('prev').onclick=()=>switchTo(index-1,true);
-$('next').onclick=()=>switchTo(index+1,true);
-$('seek').oninput=e=>{if(Number.isFinite(audio.duration))audio.currentTime=Number(e.target.value);};
-audio.addEventListener('ended',()=>{log('ended: автоматический переход');switchTo(index+1,true);});
-audio.addEventListener('timeupdate',()=>{$('seek').max=Number.isFinite(audio.duration)?audio.duration:duration;$('seek').value=audio.currentTime;$('time').textContent=time(audio.currentTime);});
-audio.addEventListener('loadedmetadata',()=>{$('total').textContent=time(audio.duration);});
-audio.addEventListener('pause',()=>{if(!audio.ended){$('play').textContent='▶ Play';log('pause');}});
-audio.addEventListener('playing',()=>{$('play').textContent='⏸ Pause';log('playing '+tracks[index].title);});
-audio.addEventListener('error',()=>status('Ошибка аудио: '+(audio.error?.message||'неизвестная')));
+const $=id=>document.getElementById(id),audio=$('audio'),API='https://api.audius.co/v1';
+let tracks=[],index=0,op=0,controller=null,demoUrls=[];
+function log(s){$('log').textContent='['+new Date().toLocaleTimeString()+'] '+s+'\n'+$('log').textContent}
+function status(s){$('status').textContent=s;log(s)}
+function fmt(n){return Number.isFinite(n)?Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0'):'0:00'}
+function cover(t){return t?.artwork?.['480x480']||t?.artwork?.['150x150']||''}
+function formatTrack(t){return {id:t.id,title:t.title||'Без названия',artist:t.user?.name||'Неизвестный исполнитель',artwork:t.artwork,duration:t.duration,source:'audius',streamable:t.is_streamable!==false,permalink:t.permalink}}
+function render(){const t=tracks[index];if(!t)return;$('trackTitle').textContent=t.title;$('subtitle').textContent=t.artist;const coverUrl=cover(t);$('cover').style.backgroundImage=coverUrl?'linear-gradient(#0002,#0002),url("'+coverUrl.replace(/"/g,'%22')+'")':'';$('cover').textContent=coverUrl?'':'🎵';
+$('queue').replaceChildren(...tracks.map((track,i)=>{const d=document.createElement('div');d.className='track'+(i===index?' active':'');const s=document.createElement('span');s.textContent=(i+1)+'. '+track.title+' — '+track.artist;const b=document.createElement('button');b.textContent=i===index?'Сейчас':'▶';b.onclick=()=>switchTo(i,true);d.append(s,b);return d;}));
+if('mediaSession'in navigator){const art=coverUrl?[{src:coverUrl,sizes:'480x480'}]:[];navigator.mediaSession.metadata=new MediaMetadata({title:t.title,artist:t.artist,album:'Music Lab',artwork:art});}}
+function streamUrl(t){return t.source==='demo'?t.url:API+'/tracks/'+encodeURIComponent(t.id)+'/stream'}
+async function switchTo(i,autoplay){if(!tracks.length)return;const token=++op;index=(i+tracks.length)%tracks.length;audio.pause();audio.removeAttribute('src');audio.load();const t=tracks[index];audio.src=streamUrl(t);audio.load();render();$('time').textContent='0:00';$('total').textContent=fmt(t.duration||0);log('Выбран '+t.title);
+if(autoplay){try{await audio.play();if(token===op)status('▶ '+t.title);}catch(e){status('Не удалось воспроизвести: '+e.message+' (возможно, Audius ограничил поток или доступ из WebView)')}}else status('Готово: '+t.title);}
+async function api(path,signal){const response=await fetch(API+path,{signal,headers:{Accept:'application/json'}});if(!response.ok)throw Error('Audius HTTP '+response.status);const data=await response.json();if(!Array.isArray(data.data))throw Error('Audius: неожиданный формат');return data.data;}
+async function load(mode){if(controller)controller.abort();controller=new AbortController();$('search').disabled=true;$('trending').disabled=true;$('searchStatus').textContent='Загружаю музыку…';const q=$('query').value.trim();try{if(mode==='search'&&!q)throw Error('Введите название или исполнителя');
+const list=await api(mode==='trending'?'/tracks/trending?limit=15':'/tracks/search?query='+encodeURIComponent(q)+'&limit=15',controller.signal);const items=list.filter(t=>t?.id&&t.is_streamable!==false).map(formatTrack);if(!items.length)throw Error('Подходящих треков не найдено');
+tracks=items;$('searchStatus').textContent='Найдено треков: '+items.length+' · выбери трек или нажми Play';await switchTo(0,false);}
+catch(e){if(e.name!=='AbortError'){$('searchStatus').textContent='Ошибка: '+e.message;log('Audius API: '+e.message)}}finally{$('search').disabled=false;$('trending').disabled=false;}}
+function makeDemo(notes){const rate=11025,sec=18,count=rate*sec,v=new DataView(new ArrayBuffer(44+count*2));let p=0;const str=s=>{for(const ch of s)v.setUint8(p++,ch.charCodeAt(0))},u32=n=>{v.setUint32(p,n,true);p+=4},u16=n=>{v.setUint16(p,n,true);p+=2};str('RIFF');u32(36+count*2);str('WAVEfmt ');u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);str('data');u32(count*2);for(let i=0;i<count;i++){const t=i/rate,f=notes[Math.floor(t*2.5)%notes.length],s=.22*(Math.sin(2*Math.PI*f*t)+.2*Math.sin(4*Math.PI*f*t));v.setInt16(p,Math.max(-1,Math.min(1,s))*32767,true);p+=2;}return URL.createObjectURL(new Blob([v.buffer],{type:'audio/wav'}));}
+function demos(){if(!demoUrls.length)demoUrls=[[220,261.63,329.63,392],[261.63,329.63,392,523.25],[164.81,196,246.94,329.63]].map(makeDemo);tracks=demoUrls.map((url,i)=>({id:'demo'+i,title:['Violet Pulse','Green Drift','Night Lights'][i],artist:'Music Lab · Test',source:'demo',url,duration:18}));$('searchStatus').textContent='Режим тестовых мелодий';switchTo(0,false);}
+$('search').onclick=()=>load('search');$('query').onkeydown=e=>{if(e.key==='Enter')load('search')};$('trending').onclick=()=>load('trending');$('demo').onclick=demos;
+$('play').onclick=async()=>{if(!tracks.length){demos();}if(!audio.paused){audio.pause();return}try{await audio.play();status('▶ '+tracks[index].title)}catch(e){status('Ошибка запуска: '+e.message)}};
+$('prev').onclick=()=>switchTo(index-1,true);$('next').onclick=()=>switchTo(index+1,true);
+$('seek').oninput=e=>{if(Number.isFinite(audio.duration))audio.currentTime=+e.target.value};
+audio.addEventListener('ended',()=>{log('ended → next');switchTo(index+1,true)});
+audio.addEventListener('timeupdate',()=>{$('seek').max=Number.isFinite(audio.duration)?audio.duration:tracks[index]?.duration||18;$('seek').value=audio.currentTime;$('time').textContent=fmt(audio.currentTime)});
+audio.addEventListener('loadedmetadata',()=>{$('total').textContent=fmt(audio.duration)});
+audio.addEventListener('playing',()=>{$('play').textContent='⏸ Pause';setControls();log('playing')});
+audio.addEventListener('pause',()=>{$('play').textContent='▶ Play'});
+audio.addEventListener('waiting',()=>log('buffering'));
+audio.addEventListener('error',()=>{if(audio.error)status('Ошибка аудиопотока: '+(audio.error.message||audio.error.code))});
 document.addEventListener('visibilitychange',()=>log('visibility: '+document.visibilityState));
-function installMediaControls(){
-if(!('mediaSession' in navigator))return;
-const ms=navigator.mediaSession;
-const actions={
-play:()=>audio.play(),
-pause:()=>audio.pause(),
-nexttrack:()=>switchTo(index+1,true),
-previoustrack:()=>switchTo(index-1,true)
-};
-for(const [action,handler] of Object.entries(actions)){
-try{ms.setActionHandler(action,handler);}catch(e){log('MediaSession '+action+': '+e.message);}
-}
-for(const action of ['seekforward','seekbackward','seekto']){
-try{ms.setActionHandler(action,null);}catch(e){log('Clear '+action+': '+e.message);}
-}
-log('MediaSession: next/previous active; 10-sec seek disabled');
-}
-audio.addEventListener('playing',installMediaControls);
-installMediaControls();
-
-try{window.Telegram?.WebApp?.ready();window.Telegram?.WebApp?.expand();}catch(e){log('Telegram: '+e.message);}
-try{urls=tracks.map(t=>wav(t.notes));switchTo(0,false);}catch(e){status('Ошибка создания треков: '+e.message);}
+function setControls(){if(!('mediaSession'in navigator))return;const s=navigator.mediaSession;const actions={play:()=>audio.play(),pause:()=>audio.pause(),nexttrack:()=>switchTo(index+1,true),previoustrack:()=>switchTo(index-1,true)};for(const [name,fn] of Object.entries(actions)){try{s.setActionHandler(name,fn)}catch(e){log(name+': '+e.message)}}for(const name of ['seekbackward','seekforward','seekto']){try{s.setActionHandler(name,null)}catch(e){}}}
+try{window.Telegram?.WebApp?.ready();window.Telegram?.WebApp?.expand()}catch(e){log('Telegram: '+e.message)}setControls();demos();load('trending');
 })();
-</script>
-</body></html>
+</script></body></html>
