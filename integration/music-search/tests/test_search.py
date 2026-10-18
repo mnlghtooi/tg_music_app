@@ -38,4 +38,35 @@ class SearchTests(unittest.TestCase):
   service=SearchService(lambda *a:'public',httpx.Client(transport=httpx.MockTransport(limited)))
   with self.assertRaises(httpx.HTTPStatusError):service.search('test')
   self.assertEqual(len(count),1);self.assertFalse(service.pending)
+ def test_mixed_search(self):
+  def handler(r):
+   self.assertEqual(r.url.path,'/search')
+   return httpx.Response(200,json={'collection':[
+    {'kind':'user','id':1,'username':'Artist'},
+    {'kind':'playlist','id':1,'title':'Playlist','user':{'username':'Owner'}},
+    {'kind':'track','id':1,'title':'Song','duration':120000}]})
+  service=SearchService(lambda *a:'public',httpx.Client(transport=httpx.MockTransport(handler)))
+  result=service.search('test')['data']
+  self.assertEqual([t['kind'] for t in result],['artist','playlist','track'])
+  self.assertEqual(result[0]['title'],'Artist');self.assertEqual(result[1]['artist'],'Owner')
+ def test_playlist_batch_hydration(self):
+  paths=[]
+  def handler(r):
+   paths.append(r.url.path)
+   if r.url.path=='/playlists/12':return httpx.Response(200,json={'title':'List','tracks':[{'id':i} for i in range(1,24)]})
+   self.assertEqual(r.url.params['ids'],','.join(str(i) for i in range(11,21)))
+   return httpx.Response(200,json=[{'id':i,'kind':'track','title':str(i)} for i in range(20,10,-1)])
+  service=SearchService(lambda *a:'public',httpx.Client(transport=httpx.MockTransport(handler)))
+  result=service.browse('playlist','12',2)
+  self.assertEqual([t['id'] for t in result['data']],[str(i) for i in range(11,21)])
+  self.assertTrue(result['has_more']);self.assertEqual(len(paths),2)
+  service.browse('playlist','12',2);self.assertEqual(len(paths),2)
+ def test_artist_page_and_validation(self):
+  def handler(r):
+   self.assertEqual(r.url.path,'/users/2/tracks');self.assertEqual(r.url.params['offset'],'10')
+   return httpx.Response(200,json={'collection':[{'id':1,'title':'Public song'}]})
+  service=SearchService(lambda *a:'public',httpx.Client(transport=httpx.MockTransport(handler)))
+  self.assertFalse(service.browse('artist','2',2)['has_more'])
+  for kind,item,page in [('other','2',1),('artist','../x',1),('playlist','2',0)]:
+   with self.assertRaises(ValueError):service.browse(kind,item,page)
 if __name__=='__main__':unittest.main()

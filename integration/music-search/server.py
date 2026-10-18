@@ -105,7 +105,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.6.2"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.0"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -113,6 +113,15 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:self.respond(400,{"error":"Некорректная страница"});return
                 if not 1<=page<=100:self.respond(400,{"error":"Некорректная страница"});return
                 self.respond(200,search(q,page));return
+            if p.path=="/api/collection":
+                params=parse_qs(p.query)
+                kind=params.get('kind',[''])[0];item_id=params.get('id',[''])[0]
+                try:
+                    page=int(params.get('page',['1'])[0])
+                    result=SEARCH_SERVICE.browse(kind,item_id,page)
+                except ValueError:
+                    self.respond(400,{'error':'Некорректная коллекция или страница'});return
+                self.respond(200,result);return
             if p.path=="/api/stream":
                 track_id=parse_qs(p.query).get("id",[""])[0]
                 self.respond(302,headers={"Location":stream(track_id)});return
@@ -158,7 +167,7 @@ if __name__=="__main__":
     a=argparse.ArgumentParser();a.add_argument("--port",type=int,default=8765);args=a.parse_args()
     server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.6.2 — SoundCloud",flush=True)
+    print("Music Lab v0.7.0 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()
