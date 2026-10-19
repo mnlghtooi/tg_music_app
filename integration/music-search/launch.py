@@ -55,22 +55,33 @@ def probe_public_tunnel(hostname):
         return isinstance(payload,dict) and payload.get('ok') is True
 
 
-def announce_public_tunnel(hostname, key, attempts=5, pause=3):
-    """Only issue a verified phone URL after the public health check succeeds."""
-    for attempt in range(attempts):
+def announce_public_tunnel(hostname, key, stop_event=None, pause=5, progress_every=12):
+    """Compose the private link automatically; retry HTTPS until ready or shutdown.
+
+    Quick Tunnels can register before public DNS is available. A transient
+    lookup error must never leave the launcher permanently without PHONE_URL.
+    """
+    stop_event=stop_event if stop_event is not None else threading.Event()
+    phone_url='https://'+hostname+'/open/'+key
+    print('PHONE_URL_PENDING='+phone_url,flush=True)
+    print('Checking public HTTPS automatically; no manual URL assembly needed.',flush=True)
+    attempts=0
+    while not stop_event.is_set():
         try:
             if probe_public_tunnel(hostname):
-                print('PHONE_URL=https://'+hostname+'/open/'+key,flush=True)
-                print('Public HTTPS health check passed. Open the private URL on iPhone.',flush=True)
+                print('PHONE_URL='+phone_url,flush=True)
+                print('Public HTTPS health check passed. Open PHONE_URL on iPhone.',flush=True)
                 return True
         except (OSError,ValueError):
             pass
-        if attempt<attempts-1:
-            time.sleep(pause)
-    print('WARNING: Cloudflare registered, but public DNS/HTTPS could not be verified '
-          'from this computer. Check VPN, DNS (e.g. 100.64.0.1), and trycloudflare.com.',flush=True)
-    print('Unverified public hostname: https://'+hostname,flush=True)
-    print('Local Music Lab still works; app rebuild or hardcoded URL changes will not fix DNS.',flush=True)
+        attempts+=1
+        if attempts==1:
+            print('Public DNS/HTTPS not ready yet; retrying automatically.',flush=True)
+        elif progress_every and attempts%progress_every==0:
+            print('Still waiting for public DNS/HTTPS; retrying automatically. '
+                  'If this persists, check VPN/DNS. Local Music Lab remains available.',flush=True)
+        if stop_event.wait(pause):
+            break
     return False
 
 
@@ -95,6 +106,7 @@ def main():
     print("Computer: "+local,flush=True)
     if not args.no_browser:webbrowser.open(local)
     tunnel=None
+    tunnel_check_stop=threading.Event()
     try:
         if not args.local_only:
             tools=ROOT/".tools";tools.mkdir(exist_ok=True)
@@ -121,9 +133,10 @@ def main():
                 if hostname and registered and not verification_started:
                     verification_started=True
                     threading.Thread(target=announce_public_tunnel,
-                        args=(hostname,server.KEY),daemon=True).start()
+                        args=(hostname,server.KEY,tunnel_check_stop),daemon=True).start()
                 if 'ERR' in line:
                     print('Tunnel: '+line.strip(),flush=True)
+            tunnel_check_stop.set()
             if not hostname or not registered:
                 print('HTTPS tunnel did not register; local Music Lab still works.',flush=True)
         while True:time.sleep(1)
@@ -134,6 +147,7 @@ def main():
             while True:time.sleep(1)
         except KeyboardInterrupt:pass
     finally:
+        tunnel_check_stop.set()
         if tunnel:tunnel.terminate()
         http.shutdown()
 if __name__=="__main__":main()
