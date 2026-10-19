@@ -28,7 +28,7 @@ def options(flat=False):
 
 def media_token(url):
     p=urlparse(url);host=p.hostname or ""
-    if p.scheme!="https" or not (host.endswith(".sndcdn.com") or host.endswith(".soundcloud.com") or host.endswith(".soundcloud.cloud") or host=="soundcloud.com"):
+    if p.scheme!="https" or not (host.endswith(".sndcdn.com") or host.endswith(".soundcloud.com") or host.endswith(".soundcloud.cloud") or host.endswith('.bcbits.com') or host=="soundcloud.com"):
         raise ValueError("Unsupported media host")
     token=hashlib.sha256(url.encode()).hexdigest()
     with LOCK:
@@ -56,8 +56,10 @@ def search_credentials(expired=None):
 
 from search_service import SearchService
 from stream_service import StreamService
+from bandcamp_service import BandcampService, BandcampError
 SEARCH_SERVICE=SearchService(search_credentials)
 STREAM_SERVICE=StreamService(SEARCH_SERVICE,media_token)
+BANDCAMP=BandcampService(media_token)
 
 def warm_search():
     try: search_credentials()
@@ -92,6 +94,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             p=urlparse(self.path)
+            if p.path=='/healthz':
+                self.respond(200,{'ok':True,'version':'0.7.2'});return
             if p.path.startswith("/open/") and hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
                 self.respond(302,headers={"Location":"/","Set-Cookie":"musiclab_access="+KEY+"; HttpOnly; SameSite=Lax; Path=/"})
                 return
@@ -102,26 +106,34 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.1"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.2"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
                 try:page=int(parse_qs(p.query).get("page",["1"])[0])
                 except ValueError:self.respond(400,{"error":"Некорректная страница"});return
                 if not 1<=page<=100:self.respond(400,{"error":"Некорректная страница"});return
-                self.respond(200,search(q,page));return
+                provider=parse_qs(p.query).get('source',['soundcloud'])[0]
+                if provider not in ('soundcloud','bandcamp'):
+                    self.respond(400,{'error':'Неизвестный источник поиска'});return
+                self.respond(200,BANDCAMP.search(q,page) if provider=='bandcamp' else search(q,page));return
             if p.path=="/api/collection":
                 params=parse_qs(p.query)
                 kind=params.get('kind',[''])[0];item_id=params.get('id',[''])[0]
                 try:
                     page=int(params.get('page',['1'])[0])
-                    result=SEARCH_SERVICE.browse(kind,item_id,page)
+                    source=params.get('source',['soundcloud'])[0]
+                    if source not in ('soundcloud','bandcamp'):raise ValueError('Invalid source')
+                    result=(BANDCAMP if source=='bandcamp' else SEARCH_SERVICE).browse(kind,item_id,page)
                 except ValueError:
                     self.respond(400,{'error':'Некорректная коллекция или страница'});return
                 self.respond(200,result);return
             if p.path=="/api/stream":
                 track_id=parse_qs(p.query).get("id",[""])[0]
-                self.respond(302,headers={"Location":stream(track_id)});return
+                source=parse_qs(p.query).get('source',['soundcloud'])[0]
+                if source not in ('soundcloud','bandcamp'):
+                    self.respond(400,{'error':'Неизвестный источник аудио'});return
+                self.respond(302,headers={"Location":BANDCAMP.stream(track_id) if source=='bandcamp' else stream(track_id)});return
             if p.path.startswith("/api/media/"):
                 token=p.path.rsplit("/",1)[-1]
                 with LOCK: entry=MEDIA.get(token)
@@ -159,16 +171,20 @@ class Handler(BaseHTTPRequestHandler):
                     return
             self.respond(404,{"error":"Not found"})
         except ConnectionError: pass
+        except BandcampError as error:
+            try:self.respond(502,{'error':str(error),'code':'BandcampUnavailable'})
+            except ConnectionError:pass
         except Exception as e:
             # URLs and upstream access data are never sent to the browser.
             try:self.respond(502,{"error":"Не удалось получить музыку. Источник может ограничивать этот трек; попробуй другой результат.","code":type(e).__name__})
             except ConnectionError:pass
 
 if __name__=="__main__":
-    a=argparse.ArgumentParser();a.add_argument("--port",type=int,default=8765);args=a.parse_args()
-    server=ThreadingHTTPServer(("127.0.0.1",args.port),Handler)
+    a=argparse.ArgumentParser();a.add_argument("--port",type=int,default=int(os.environ.get('PORT','8765')))
+    a.add_argument('--host',default='127.0.0.1');args=a.parse_args()
+    server=ThreadingHTTPServer((args.host,args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.7.1 — SoundCloud",flush=True)
+    print("Music Lab v0.7.2 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()

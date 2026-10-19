@@ -9,18 +9,13 @@ def main():
     parser.add_argument("--local-only",action="store_true")
     parser.add_argument("--no-browser",action="store_true")
     args=parser.parse_args()
-    if not (ROOT/"hls.min.js").exists():
-        import hashlib
-        data=urllib.request.urlopen("https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js",timeout=45).read()
-        if hashlib.sha256(data).hexdigest()!="7c47cd97d7a6e7b98d9623dd8ed9a6d45af4be4085e0c2001cd7175c2b4cfb07":
-            raise RuntimeError("HLS player checksum mismatch")
-        (ROOT/"hls.min.js").write_bytes(data)
-        urllib.request.urlretrieve("https://raw.githubusercontent.com/video-dev/hls.js/v1.6.13/LICENSE",ROOT/"HLS-LICENSE.txt")
+    from prepare_assets import prepare_assets
+    prepare_assets()
     http=server.ThreadingHTTPServer(("127.0.0.1",8765),server.Handler)
     threading.Thread(target=http.serve_forever,daemon=True).start()
     local="http://127.0.0.1:8765/open/"+server.KEY
     threading.Thread(target=server.warm_search,daemon=True).start()
-    print("Music Lab 0.7.1 is running.",flush=True)
+    print("Music Lab 0.7.2 is running.",flush=True)
     print("Computer: "+local,flush=True)
     if not args.no_browser:webbrowser.open(local)
     tunnel=None

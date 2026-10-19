@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: musiclab
+    runtime: python
+    plan: free
+    rootDir: integration/music-search
+    buildCommand: pip install -r requirements.txt && python prepare_assets.py
+    startCommand: python server.py --host 0.0.0.0
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: PYTHONUNBUFFERED
+        value: '1'
+      - key: MUSICLAB_ACCESS_KEY
+        generateValue: true
