@@ -17,6 +17,7 @@
 
 - [x] [PR #18](https://github.com/mnlghtooi/tg_music_app/pull/18) — v0.7.9: пользователь подтвердил, что превью и blocked скрываются на iPhone, CI success, **merged в main**. Недостаточное покрытие популярных исполнителей — отдельная архитектурная задача.
 - [ ] **Архитектура до VK, этап A:** [Draft PR #22](https://github.com/mnlghtooi/tg_music_app/pull/22) v0.7.10 — реестр трёх провайдеров, `ArtistAggregateService`, новая объединённая карточка с осторожной маркировкой кандидатов. CI success, **ожидает iPhone**. Не объявлять найденные по имени записи подтверждёнными оригиналами.
+- [ ] **Единая строка артиста в поиске (Issue #24):** в текущем Draft PR #22 добавлена осторожная группировка одноимённых provider-профилей в одну поисковую строку, отдельный выбор каждого исходного профиля, сохранение исходных ID и маркировка неподтверждённой идентичности. Backend/Node CI прошли, **ожидает реального iPhone-smoke**. Это не заменяет MusicBrainz/canonical identity этапа B.
 - [ ] **Архитектура до VK, этапы B/C:** [Issue #23](https://github.com/mnlghtooi/tg_music_app/issues/23) — canonical artist/recording идентификаторы, provider-specific playback adapters, сохранение плейлистов. [Документ архитектуры](docs/MUSIC_CATALOG_ARCHITECTURE.md).
 - [ ] **После архитектуры:** [Issue #19](https://github.com/mnlghtooi/tg_music_app/issues/19) — исследовать metadata-only VK и реальный прирост доступных треков, не вводя неподтверждённые потоки в Music Lab.
 
