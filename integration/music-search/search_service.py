@@ -150,17 +150,29 @@ class SearchService:
                     'source': 'soundcloud', 'permalink': track.get('permalink_url') or '',
                     'artwork': {'480x480': art.replace('-large.', '-t500x500.')} if art else None}
         duration = (track.get("duration") or 0) / 1000
-        preview = track.get("policy") == "SNIP" or 0 < duration <= 30
-        if track.get("policy") == "SNIP":
-            duration = min(duration, 30)
         art = track.get("artwork_url") or (track.get("user") or {}).get("avatar_url")
         from stream_service import StreamService
-        protected_only = bool((track.get('media') or {}).get('transcodings')) and not StreamService.candidates(track)
+        transcodings = (track.get('media') or {}).get('transcodings') or []
+        candidates = StreamService.candidates(track)
+        # Seconds alone cannot distinguish a complete short song from a snippet.
+        # Policy SNIP and explicitly snipped-only streams are reliable preview signals.
+        if track.get('policy') == 'BLOCK' or (transcodings and not candidates):
+            availability = 'blocked'
+        elif track.get('policy') == 'SNIP' or (candidates and all(t.get('snipped') is True for t in candidates)):
+            availability = 'preview_only'
+        elif candidates or track.get('policy') == 'ALLOW':
+            availability = 'playable'
+        else:
+            availability = 'unknown'
+        preview = availability == 'preview_only'
+        if track.get('policy') == 'SNIP':
+            duration = min(duration, 30)
         return {"id": str(track["id"]), "kind": "track", "title": track.get("title") or "Без названия",
                 "artist": (track.get("publisher_metadata") or {}).get("artist")
                           or (track.get("user") or {}).get("username") or "SoundCloud",
                 "source": "soundcloud", "duration": duration, "preview": preview,
+                "availability": availability,
                 "artist_ref": {"id": str(track["user"]["id"]), "kind": "artist", "source": "soundcloud", "title": track["user"].get("username") or "SoundCloud"} if (track.get("user") or {}).get("id") else None,
-                "unavailable": track.get('policy') == 'BLOCK' or protected_only,
+                "unavailable": availability == 'blocked',
                 "permalink": track.get("permalink_url") or "",
                 "artwork": {"480x480": art.replace("-large.", "-t500x500.")} if art else None}
