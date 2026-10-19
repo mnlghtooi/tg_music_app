@@ -6,7 +6,6 @@ cards, IDs and streaming paths remain untouched.
 """
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-import re
 import threading
 import time
 
@@ -28,13 +27,9 @@ class ArtistAggregateService:
         expected = words(name)
         if not expected or len(expected) < 3:
             return False
-        credited = words(item.get('artist') or '')
-        if credited == expected:
-            return True
-        # User-uploaded tracks sometimes put an artist credit in their title.
-        title = item.get('title') or ''
-        prefix = re.match(r'^(.+?)\s+[-–—|:]\s+(.+)$', title)
-        return bool(prefix and words(prefix.group(1)) == expected)
+        # A title like "Portishead - Roads" uploaded by a third party is
+        # NOT reliable evidence that the recording belongs to Portishead.
+        return words(item.get('artist') or '') == expected
 
     @staticmethod
     def source_key(item):
