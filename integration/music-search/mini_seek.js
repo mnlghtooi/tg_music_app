@@ -60,12 +60,13 @@
       holdTimer = null;
     }
     function releaseGesture() {
-      if (gesture?.active) {
-        try { trigger.releasePointerCapture?.(gesture.id); } catch (_) { /* WebView */ }
-      }
+      const capturedId = gesture?.active ? gesture.id : null;
       clearHold();
-      gesture = null;
+      gesture = null; // Clear before releasePointerCapture can dispatch a synchronous event.
       trigger.classList.remove('mini-scrubbing');
+      if (capturedId !== null) {
+        try { trigger.releasePointerCapture?.(capturedId); } catch (_) { /* WebView */ }
+      }
     }
     function suppressClick() {
       swallowClick = true;
