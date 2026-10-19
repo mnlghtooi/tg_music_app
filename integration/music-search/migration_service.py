@@ -2,33 +2,19 @@
 from collections import OrderedDict
 from html.parser import HTMLParser
 from urllib.parse import urlparse, urljoin
-from difflib import SequenceMatcher
 import json
 import re
 import threading
 import time
-import unicodedata
 import httpx
+from concurrent.futures import ThreadPoolExecutor
+from catalog_service import CatalogService
+from track_matching import words, assess, rank_matches, match_score
 
 class MigrationError(RuntimeError):
-    pass
-
-def words(value):
-    return ' '.join(re.findall(r'\w+', unicodedata.normalize('NFKC', value).casefold()))
-
-
-def match_score(original, candidate):
-    title = SequenceMatcher(None, words(original['title']), words(candidate['title'])).ratio()
-    artist = SequenceMatcher(None, words(original['artist']), words(candidate['artist'])).ratio()
-    score = .65 * title + .35 * artist
-    versions = ('live', 'remix', 'cover', 'instrumental', 'karaoke', 'acoustic', 'sped', 'slowed')
-    if any((v in words(original['title']).split()) != (v in words(candidate['title']).split()) for v in versions):
-        score = min(score, .6)
-    if candidate.get('preview'): score = min(score, .65)
-    if original.get('duration') and candidate.get('duration'):
-        if abs(original['duration'] - candidate['duration']) > 15: score = min(score, .7)
-    return round(score, 3)
-
+    def __init__(self, message, code='migration_error'):
+        super().__init__(message)
+        self.code = code
 
 def playlist_id(value):
     if not isinstance(value, str) or len(value) > 2048:
@@ -61,7 +47,8 @@ class PublicPage(HTMLParser):
         if tag == 'script': self.in_state = False
 
 class MigrationService:
-    def __init__(self, search, bandcamp, client=None):
+    def __init__(self, search, bandcamp, client=None, catalog=None):
+        self.catalog = catalog or CatalogService(search, bandcamp)
         self.search = search
         self.bandcamp = bandcamp
         self.client = client or httpx.Client(timeout=httpx.Timeout(20, connect=5),
@@ -139,20 +126,48 @@ class MigrationService:
         finally:
             self.slots.release()
 
-    def resolve(self, original, source):
+    def resolve(self, original):
         if (not isinstance(original, dict) or any(not isinstance(original.get(k), str) or
                 not 1 <= len(original[k]) <= 300 for k in ('title', 'artist'))):
             raise MigrationError('Некорректные сведения о треке.')
         duration = original.get('duration', 0)
         if not isinstance(duration, (float, int)) or not 0 <= duration <= 86400:
             raise MigrationError('Некорректная длительность трека.')
-        if source not in ('soundcloud', 'bandcamp'): raise MigrationError('Выбери источник для поиска совпадений.')
-        service = self.search if source == 'soundcloud' else self.bandcamp
-        data = service.search((original['artist'] + ' ' + original['title'])[:150], 1, 'track')['data']
-        candidates = [{**t, 'score': match_score(original, t)} for t in data
-                      if t.get('kind', 'track') == 'track' and not t.get('unavailable')]
-        candidates.sort(key=lambda t: t['score'], reverse=True)
-        return {'data': candidates[:5]}
+        query = (original['artist'] + ' ' + original['title'])[:150]
+        batch = self.catalog.lookup(query)
+        if not batch['checked_sources']:
+            raise MigrationError('Все сервисы временно недоступны. Повтори поиск позднее.', 'sources_unavailable')
+        candidates = batch['data']
+        failed = set(batch['failed_sources'])
+        checked = set(batch['checked_sources'])
+
+        def enrich(items):
+            missing = sorted([t for t in items if t.get('source') == 'bandcamp' and not t.get('duration')
+                and assess(original, t)['score'] >= .65], key=lambda t: -assess(original, t)['score'])[:3]
+            if not missing: return items
+            hydrated = {}
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                jobs = [(t, pool.submit(self.catalog.hydrate, t)) for t in missing]
+                for t, job in jobs:
+                    try: hydrated[(t['source'], t['id'])] = job.result()
+                    except Exception: failed.add('bandcamp')
+            return [hydrated.get((t.get('source'), t.get('id')), t) for t in items]
+
+        candidates = enrich(candidates)
+        result = rank_matches(original, candidates)
+        if not result['selected']:
+            title = re.sub(r'\s*[\(\[]?\b(?:feat\.?|ft\.?|featuring)\s+.+$', '', original['title'], flags=re.I).strip()
+            secondary = (original['artist'].split(',')[0] + ' ' + title)[:150]
+            if words(secondary) == words(query): secondary = title[:150]
+            if words(secondary) != words(query):
+                fallback = self.catalog.lookup(secondary, sources=tuple(checked))
+                candidates = enrich(candidates + fallback['data'])
+                failed.update(fallback['failed_sources'])
+                checked.update(fallback['checked_sources'])
+                result = rank_matches(original, candidates)
+        result.update({'checked_sources': sorted(checked), 'failed_sources': sorted(failed)})
+        if result['state'] == 'not_found' and failed: result['state'] = 'incomplete'
+        return result
 
 
 def handle_get(handler, parsed, service):
@@ -183,9 +198,9 @@ def handle_post(handler, service):
         if path == '/api/migration/public-playlist':
             handler.respond(200, service.public_playlist(body.get('url')))
         elif path == '/api/migration/resolve':
-            handler.respond(200, service.resolve(body.get('track'), body.get('source')))
+            handler.respond(200, service.resolve(body.get('track')))
         else: handler.respond(404, {'error': 'Неизвестный запрос переноса.'})
     except (MigrationError, ValueError) as error:
-        handler.respond(400, {'error': str(error)})
+        handler.respond(400, {'error': str(error), 'code': getattr(error, 'code', 'invalid_request')})
     except Exception:
         handler.respond(502, {'error': 'Источник временно не отвечает. Повтори попытку.'})
