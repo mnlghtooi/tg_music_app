@@ -48,7 +48,7 @@ test('unverified grouped artist search rows expose provider alternatives without
   const end = html.indexOf('function sourceName(', start);
   const block = html.slice(start, end);
   assert.match(block, /item\.artist_profiles\.length>1/);
-  assert.match(block, /профиля с таким именем · не подтверждены/);
+  assert.match(block, /с таким именем · не подтверждены/);
   assert.match(block, /openCollection\(item,title\)/);
   const overview = html.slice(html.indexOf('function renderArtistOverview('), html.indexOf('function renderCollectionContent('));
   assert.match(overview, /Профили с таким именем/);
@@ -78,4 +78,16 @@ test('search cache preserves all original provider profile ids after grouped art
   assert.deepEqual(saved.artist_profiles.map(x=>x.source+':'+x.id),['soundcloud:a','bandcamp:b']);
   assert.equal(saved.grouping,'name_only');
   assert.equal(saved.identity_verified,false);
+});
+
+test('artist search rows show entity type, not a misleading single-service label', () => {
+  const start = html.indexOf('if([\'artist\',\'playlist\',\'album\'].includes(item.kind))');
+  const end = html.indexOf('title.append(name,label)', start);
+  assert.ok(start !== -1 && end > start, 'artist search label exists');
+  const code = html.slice(start, end);
+  assert.match(code, /if\(item\.kind==='artist'\)/);
+  assert.match(code, /label\.textContent\+=' · '\+sourceName\(item\.source\)/);
+  assert.match(code, /\}else\{label\.textContent\+=' · '\+sourceName\(item\.source\)/);
+  assert.match(code, /не подтверждены/);
+  assert.doesNotMatch(code, /item\.kind==='artist'\?'SoundCloud'/);
 });
