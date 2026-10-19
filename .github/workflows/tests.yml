@@ -21,6 +21,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test tests/test_transfer.cjs tests/test_entity_transfer.cjs tests/test_mini_seek.cjs tests/test_track_availability.cjs tests/test_artist_catalog.cjs
+      - run: node --test tests/test_transfer.cjs tests/test_entity_transfer.cjs tests/test_mini_seek.cjs tests/test_track_availability.cjs tests/test_artist_catalog.cjs tests/test_library_backup.cjs
       - run: node --check library_transfer.js && node --check migration_ui.js && node --check track_availability.js
       - run: python prepare_assets.py
