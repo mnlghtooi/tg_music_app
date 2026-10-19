@@ -8,7 +8,7 @@ async function request(path,body,signal){
  const response=await fetch('/api/migration/'+path,{signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
  const data=await response.json();if(!response.ok){const error=Error(data.error||'Не удалось получить данные.');error.code=data.code;throw error;}return data;
 }
-function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function download(name,data){const content=typeof data==='string'?data:JSON.stringify(data,null,2);const url=URL.createObjectURL(new Blob([content],{type:'application/json;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function setBusy(value){busy=value;for(const id of ['publicPlaylistLoad','publicPlaylistUrl','migrationMatch','migrationApply'])$(id).disabled=value;$('migrationCancel').hidden=!value;}
 async function run(fn){if(busy)return;setBusy(true);aborter=new AbortController();try{await fn(aborter.signal);}catch(e){message(e.name==='AbortError'?'Поиск остановлен. Найденные треки сохранены до закрытия страницы.':e.message);}finally{setBusy(false);if(pending)render();}}
 async function loadPlaylist(signal){
@@ -68,9 +68,15 @@ $('migrationApply').onclick=()=>{
  try{const lib=getLibrary();const playlist={id:'import-'+Date.now()+'-'+Math.random().toString(36).slice(2),name:pending.name.slice(0,200),tracks:selected};commitLibrary({...lib,playlists:[...lib.playlists,playlist]});onChange();pending.applied=true;message('Создан плейлист «'+pending.name+'»: '+selected.length+' треков. Остальные записи не добавлены.');render();}catch(e){message('Импорт не сохранён: '+e.message);}
 };
 $('migrationExportSource').onclick=()=>{if(pending)download('spotify-track-list.json',{format:'musiclab-source-list',version:1,source:'spotify',source_url:pending.source_url,name:pending.name,tracks:pending.tracks,total:pending.total,complete:pending.complete,skipped:pending.skipped});};
-$('libraryExport').onclick=()=>{try{const copy={format:'musiclab-library',version:1,exported_at:new Date().toISOString(),library:getLibrary()};LibraryTransfer.validate(copy);download('musiclab-library-'+new Date().toISOString().slice(0,10)+'.json',copy);message('Копия библиотеки подготовлена. В ней плейлисты, лайки и дизлайки.');}catch(e){message(e.message);}};
+$('libraryExport').onclick=()=>{try{
+const backup=LibraryTransfer.prepareBackup(getLibrary());
+if(new Blob([backup.content]).size>2*1024*1024)throw Error('Размер копии больше 2 МБ. Экспорт не выполнен; библиотека не изменена.');
+download('musiclab-library-'+new Date().toISOString().slice(0,10)+'.json',backup.content);
+const n=backup.summary;
+message('JSON проверен на восстановление: '+n.playlists+' плейлистов, '+n.playlistTracks+' записей в них, '+n.likes+' лайков, '+n.dislikes+' дизлайков. Сохрани файл в «Файлы» на устройстве. Настройки и очередь в копию не входят.');
+}catch(e){message('Не удалось подготовить копию: '+e.message+' Библиотека не изменена.');}};
 let incoming=null;
-$('libraryImport').onchange=async()=>{incoming=null;$('libraryImportApply').hidden=true;const file=$('libraryImport').files?.[0];if(!file)return;try{if(file.size>2*1024*1024)throw Error('Выбери JSON-копию размером до 2 МБ.');incoming=LibraryTransfer.validate(JSON.parse(await file.text()));$('libraryImportSummary').textContent='В копии: '+incoming.playlists.length+' плейлистов, '+incoming.likes.length+' любимых треков. Текущие данные сохранятся; дубликаты объединятся.';$('libraryImportApply').hidden=false;}catch(e){message('Копия не импортирована: '+e.message);}finally{$('libraryImport').value='';}};
+$('libraryImport').onchange=async()=>{incoming=null;$('libraryImportApply').hidden=true;const file=$('libraryImport').files?.[0];if(!file)return;try{if(file.size>2*1024*1024)throw Error('Выбери JSON-копию размером до 2 МБ.');incoming=LibraryTransfer.validate(JSON.parse(await file.text()));const n=LibraryTransfer.summary(incoming);$('libraryImportSummary').textContent='Копия читается: '+n.playlists+' плейлистов, '+n.playlistTracks+' записей в них, '+n.likes+' лайков, '+n.dislikes+' дизлайков. Пока ничего не изменено. Для объединения нажми «Добавить к моей библиотеке».';$('libraryImportApply').hidden=false;}catch(e){message('Копия не импортирована: '+e.message);}finally{$('libraryImport').value='';}};
 $('libraryImportApply').onclick=()=>{if(!incoming)return;try{const next=LibraryTransfer.merge(getLibrary(),incoming);commitLibrary(next);onChange();incoming=null;$('libraryImportApply').hidden=true;$('libraryImportSummary').textContent='Копия добавлена к текущей библиотеке.';message('Импорт библиотеки завершён.');}catch(e){message('Изменения не сохранены: '+e.message);}};
 function close(){aborter?.abort();screen.hidden=true;document.body.style.overflow='';if(opener?.isConnected)opener.focus();}
 function open(){opener=document.activeElement;screen.hidden=false;document.body.style.overflow='hidden';$('closeMigration').focus();}
