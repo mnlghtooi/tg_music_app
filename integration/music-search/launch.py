@@ -42,6 +42,38 @@ def restart_previous():
         except OSError:return
         time.sleep(.1)
     raise RuntimeError('The previous server is still listening on port 8765.')
+def probe_public_tunnel(hostname):
+    """Check a temporary public HTTPS route, not merely the connector status."""
+    if not re.fullmatch(r'[a-z0-9-]+\.trycloudflare\.com', hostname):
+        raise ValueError('Unexpected Quick Tunnel hostname')
+    request=urllib.request.Request('https://'+hostname+'/healthz',
+        headers={'Cache-Control':'no-cache','Accept':'application/json'})
+    with urllib.request.urlopen(request,timeout=7) as response:
+        if response.status!=200:
+            return False
+        payload=json.load(response)
+        return isinstance(payload,dict) and payload.get('ok') is True
+
+
+def announce_public_tunnel(hostname, key, attempts=5, pause=3):
+    """Only issue a verified phone URL after the public health check succeeds."""
+    for attempt in range(attempts):
+        try:
+            if probe_public_tunnel(hostname):
+                print('PHONE_URL=https://'+hostname+'/open/'+key,flush=True)
+                print('Public HTTPS health check passed. Open the private URL on iPhone.',flush=True)
+                return True
+        except (OSError,ValueError):
+            pass
+        if attempt<attempts-1:
+            time.sleep(pause)
+    print('WARNING: Cloudflare registered, but public DNS/HTTPS could not be verified '
+          'from this computer. Check VPN, DNS (e.g. 100.64.0.1), and trycloudflare.com.',flush=True)
+    print('Unverified public hostname: https://'+hostname,flush=True)
+    print('Local Music Lab still works; app rebuild or hardcoded URL changes will not fix DNS.',flush=True)
+    return False
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--local-only",action="store_true")
@@ -74,16 +106,26 @@ def main():
                 temp.replace(exe)
             flags=subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0
             tunnel=subprocess.Popen([str(exe),"tunnel","--url","http://127.0.0.1:8765","--no-autoupdate","--protocol","http2"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding="utf-8",errors="replace",creationflags=flags)
-            found=False
+            hostname=None
+            registered=False
+            verification_started=False
             for line in tunnel.stdout:
-                match=re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",line)
-                if match and not found:
-                    found=True
-                    public=match.group(0)+"/open/"+server.KEY
-                    print("PHONE_URL="+public,flush=True)
-                    print("Open this private HTTPS link on your iPhone. Keep this window open.",flush=True)
-                if "ERR" in line:print("Tunnel: "+line.strip(),flush=True)
-            if not found:print("HTTPS tunnel unavailable. Local browser still works.",flush=True)
+                match=re.search(r"https://([a-z0-9-]+\.trycloudflare\.com)",line)
+                if match and not hostname:
+                    hostname=match.group(1)
+                    print('Quick Tunnel address created: '+hostname+
+                          ' (waiting for registered connection and public HTTPS health check)',flush=True)
+                if 'Registered tunnel connection' in line:
+                    registered=True
+                    print('Cloudflare tunnel connection registered.',flush=True)
+                if hostname and registered and not verification_started:
+                    verification_started=True
+                    threading.Thread(target=announce_public_tunnel,
+                        args=(hostname,server.KEY),daemon=True).start()
+                if 'ERR' in line:
+                    print('Tunnel: '+line.strip(),flush=True)
+            if not hostname or not registered:
+                print('HTTPS tunnel did not register; local Music Lab still works.',flush=True)
         while True:time.sleep(1)
     except KeyboardInterrupt:pass
     except Exception as exc:
