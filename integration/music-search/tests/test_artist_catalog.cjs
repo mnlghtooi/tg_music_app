@@ -91,3 +91,19 @@ test('artist search rows show entity type, not a misleading single-service label
   assert.match(code, /не подтверждены/);
   assert.doesNotMatch(code, /item\.kind==='artist'\?'SoundCloud'/);
 });
+
+test('MusicBrainz check is opt-in and does not claim name-based canonical identity',()=>{
+  const view=html.slice(html.indexOf('function renderArtistOverview('),html.indexOf('function renderCollectionContent('));
+  assert.match(view,/Проверить профиль в MusicBrainz/);
+  assert.match(view,/\/api\/artists\/identity\?/);
+  assert.match(view,/info\.identity_verified===true/);
+  assert.match(view,/Другие одноимённые профили этим не подтверждены/);
+  assert.match(view,/Объединение не выполняется/);
+  assert.doesNotMatch(view,/audio\.pause\(/);
+  assert.doesNotMatch(view,/audio\.removeAttribute\(/);
+  assert.doesNotMatch(view,/localStorage\.setItem/);
+  const player=html.slice(html.indexOf('function streamUrl('),html.indexOf('async function api('));
+  assert.doesNotMatch(player,/musicbrainz/);
+  const storage=html.match(/const KEY='([^']+)'/);
+  assert.equal(storage[1],'musiclab_library_v1');
+});
