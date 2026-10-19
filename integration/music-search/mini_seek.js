@@ -1,9 +1,12 @@
-/* Mini-player quick scrubbing: hold track area, drag horizontally, release to seek.
- * The existing full-player seek and playback buttons are intentionally untouched. */
+/* Long-press scrubbing on the entire mini-player, except playback controls.
+ * While dragging, the preview is visual only. Release seeks once and hides it.
+ * Full-player controls and audio play/pause state are not touched. */
 (function (root) {
   'use strict';
   const HOLD_MS = 350;
   const MOVE_SLOP = 12;
+  const DRAG_SLOP = 4;
+  const CONTROL_SELECTOR = '#miniPlay, #miniNext, #miniSeekPanel';
 
   function durationOf(audio) {
     const duration = audio.duration;
@@ -12,20 +15,18 @@
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
   }
-  // Moving the finger across the full track region maps to a relative change
-  // in song position. Starting a hold does not jump to the finger's x coordinate.
+  // Relative scrubbing prevents jumps when the user holds at any starting x.
   function scrubTarget(start, deltaX, width, duration) {
     if (!duration || !Number.isFinite(width) || width <= 0) return 0;
     return clamp(start + deltaX * duration / width, 0, duration);
   }
 
-  function mount({ trigger, panel, slider, elapsed, total, closeButton,
-                   audio, openPlayer, formatTime, onError, holdMs = HOLD_MS }) {
+  function mount({ trigger, panel, slider, elapsed, total, audio,
+                   openPlayer, formatTime, onError, holdMs = HOLD_MS }) {
     let gesture = null;
     let holdTimer = null;
     let swallowClick = false;
     let swallowTimer = null;
-    let editingSlider = false;
 
     function time(n) { return formatTime(Math.max(0, n || 0)); }
     function sync() {
@@ -33,14 +34,13 @@
       slider.disabled = duration === 0;
       slider.max = String(duration || 1);
       total.textContent = time(duration);
-      if (!gesture?.active && !editingSlider) {
+      if (!gesture?.active) {
         slider.value = String(clamp(audio.currentTime || 0, 0, duration || 1));
         elapsed.textContent = time(audio.currentTime);
       }
     }
     function close() {
       panel.hidden = true;
-      editingSlider = false;
       sync();
     }
     function commit(position) {
@@ -51,27 +51,39 @@
       }
       try {
         audio.currentTime = clamp(position, 0, duration);
-      } catch (error) {
+      } catch (_) {
         onError('Не удалось перемотать эту запись.');
       }
-      sync();
     }
     function clearHold() {
       if (holdTimer !== null) clearTimeout(holdTimer);
       holdTimer = null;
     }
     function releaseGesture() {
+      if (gesture?.active) {
+        try { trigger.releasePointerCapture?.(gesture.id); } catch (_) { /* WebView */ }
+      }
       clearHold();
       gesture = null;
       trigger.classList.remove('mini-scrubbing');
     }
-    function onPointerDown(e) {
-      if (e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
-      if (gesture) releaseGesture();
+    function suppressClick() {
+      swallowClick = true;
+      clearTimeout(swallowTimer);
+      swallowTimer = setTimeout(() => { swallowClick = false; }, 500);
+    }
+    function isPlaybackControl(event) {
+      return Boolean(event.target?.closest?.(CONTROL_SELECTOR));
+    }
+    function onPointerDown(event) {
+      if (isPlaybackControl(event) || event.isPrimary === false ||
+          (event.pointerType === 'mouse' && event.button !== 0)) return;
+      if (gesture) { releaseGesture(); close(); }
       gesture = {
-        id: e.pointerId, x: e.clientX, y: e.clientY,
+        id: event.pointerId, x: event.clientX, y: event.clientY,
         start: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
-        preview: audio.currentTime || 0, active: false, moved: false
+        preview: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+        active: false, moved: false
       };
       holdTimer = setTimeout(() => {
         holdTimer = null;
@@ -84,73 +96,70 @@
         gesture.active = true;
         trigger.classList.add('mini-scrubbing');
         panel.hidden = false;
-        sync();
+        slider.value = String(gesture.preview);
+        elapsed.textContent = time(gesture.preview);
         try { trigger.setPointerCapture?.(gesture.id); } catch (_) { /* WebView */ }
       }, holdMs);
     }
-    function onPointerMove(e) {
-      if (!gesture || e.pointerId !== gesture.id) return;
+    function onPointerMove(event) {
+      if (!gesture || event.pointerId !== gesture.id) return;
       if (!gesture.active) {
-        // Let vertical scrolling or ordinary swipes cancel the hold.
-        if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > MOVE_SLOP) {
+        // Swiping before hold is not a seek.
+        if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > MOVE_SLOP) {
           releaseGesture();
         }
         return;
       }
       const duration = durationOf(audio);
-      gesture.moved = Math.abs(e.clientX - gesture.x) >= 4;
+      gesture.moved = Math.abs(event.clientX - gesture.x) >= DRAG_SLOP;
       gesture.preview = scrubTarget(
-        gesture.start, e.clientX - gesture.x,
+        gesture.start, event.clientX - gesture.x,
         trigger.getBoundingClientRect().width || 1, duration
       );
       slider.value = String(gesture.preview);
       elapsed.textContent = time(gesture.preview);
     }
-    function onPointerUp(e) {
-      if (!gesture || e.pointerId !== gesture.id) return;
-      const isScrubbing = gesture.active;
+    function onPointerUp(event) {
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const wasScrubbing = gesture.active;
       const moved = gesture.moved;
       const target = gesture.preview;
       releaseGesture();
-      if (isScrubbing) {
-        // A long press on the button can otherwise generate a click and open
-        // the full player on the same release.
-        swallowClick = true;
-        clearTimeout(swallowTimer);
-        swallowTimer = setTimeout(() => { swallowClick = false; }, 450);
+      if (wasScrubbing) {
+        suppressClick(); // Prevent opening the full player on release.
         if (moved) commit(target);
-        else sync(); // Holding without moving only reveals the slider.
+        close(); // Preview never stays open after the user lifts their finger.
       }
     }
-    function onPointerCancel(e) {
-      if (gesture && e.pointerId === gesture.id) releaseGesture();
+    function onPointerCancel(event) {
+      if (!gesture || event.pointerId !== gesture.id) return;
+      const wasScrubbing = gesture.active;
+      releaseGesture();
+      if (wasScrubbing) suppressClick();
+      close(); // Cancelling never seeks.
     }
+
     trigger.addEventListener('pointerdown', onPointerDown);
     trigger.addEventListener('pointermove', onPointerMove);
     trigger.addEventListener('pointerup', onPointerUp);
     trigger.addEventListener('pointercancel', onPointerCancel);
-    trigger.addEventListener('contextmenu', e => e.preventDefault());
-    trigger.addEventListener('click', e => {
+    trigger.addEventListener('lostpointercapture', event => {
+      if (gesture && event.pointerId === gesture.id) onPointerCancel(event);
+    });
+    trigger.addEventListener('contextmenu', event => event.preventDefault());
+    trigger.addEventListener('selectstart', event => event.preventDefault());
+    trigger.addEventListener('dragstart', event => event.preventDefault());
+    trigger.addEventListener('click', event => {
       if (swallowClick) {
         swallowClick = false;
         clearTimeout(swallowTimer);
-        e.preventDefault();
-        e.stopPropagation();
-      } else {
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (!isPlaybackControl(event)) {
         openPlayer();
       }
     });
-    slider.addEventListener('input', () => {
-      editingSlider = true;
-      elapsed.textContent = time(Number(slider.value));
-    });
-    slider.addEventListener('change', () => {
-      editingSlider = false;
-      commit(Number(slider.value));
-    });
-    slider.addEventListener('blur', () => { editingSlider = false; sync(); });
-    closeButton.addEventListener('click', close);
-    // Explicit track switches clear the quick-scrub UI.
+
     audio.addEventListener('emptied', () => { releaseGesture(); close(); });
     audio.addEventListener('durationchange', sync);
     audio.addEventListener('loadedmetadata', sync);
