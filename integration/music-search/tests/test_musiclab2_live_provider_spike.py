@@ -39,7 +39,7 @@ async def public_bandcamp_search():
                     'types':[str(getattr(x,'type','')) for x in results[:4]]}
         return await asyncio.wait_for(do(),timeout=15)
     except Exception as ex:
-        return {'status':'failed','error':type(ex).__name__}
+        return {'status':'failed','error':type(ex).__name__, 'http_status':getattr(ex,'status',None)}
 
 
 class LiveProviderPoC(unittest.TestCase):
@@ -80,6 +80,8 @@ class LiveProviderPoC(unittest.TestCase):
                 stream,_=call(client,url,stream=True)
                 output['audius_audio_headers']=stream
                 output['audius_audio_title']=str(available[0].get('title',''))[:60]
+            bcapi,_=call(client,'https://bandcamp.com/api/fuzzysearch/1/app_autocomplete',{'q':'Portishead','param_with_locations':'true'})
+            output['bandcamp_unofficial_json_api_http']=bcapi
             bc,raw=call(client,'https://bandcamp.com/search',{'q':'Portishead'})
             output['bandcamp_web_search_http']=bc
             if raw is not None and raw.status_code==200:
