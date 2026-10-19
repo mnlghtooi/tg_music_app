@@ -64,6 +64,8 @@ from catalog_service import CatalogService, CatalogError
 CATALOG=CatalogService(SEARCH_SERVICE,BANDCAMP)
 from entity_service import EntityService
 ENTITIES=EntityService(SEARCH_SERVICE,BANDCAMP,CATALOG.services["audius"])
+from artist_aggregation import ArtistAggregateService
+ARTISTS=ArtistAggregateService(ENTITIES,CATALOG)
 from audio_share import AudioShare
 AUDIO_SHARE=AudioShare(ROOT,ENTITIES)
 from migration_service import MigrationService, handle_get as migration_get, handle_post as migration_post
@@ -179,11 +181,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.respond(400,{'error':'Неизвестный тип поиска'});return
                 result=CATALOG.query('audius',q,page,kind) if provider=='audius' else (CATALOG if provider=='all' else BANDCAMP if provider=='bandcamp' else SEARCH_SERVICE).search(q,page,kind)
                 self.respond(200,result);return
-            if p.path=='/api/artist':
+            if p.path in ('/api/artist','/api/artists/merged'):
                 params=parse_qs(p.query)
                 source=params.get('source',[''])[0];item_id=params.get('id',[''])[0]
-                if source not in ('soundcloud','bandcamp','audius') or len(item_id)>2048:
+                if source not in ('soundcloud','bandcamp','audius') or not item_id or len(item_id)>2048:
                     self.respond(400,{'error':'Некорректный исполнитель.'});return
+                if p.path=='/api/artists/merged':
+                    self.respond(200,ARTISTS.overview(source,item_id));return
                 self.respond(200,ENTITIES.overview(source,item_id));return
             if p.path=='/api/audio-share/config':
                 local=self.local_setup()
