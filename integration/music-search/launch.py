@@ -59,7 +59,7 @@ def main():
     threading.Thread(target=http.serve_forever,daemon=True).start()
     local="http://127.0.0.1:8765/open/"+server.KEY
     threading.Thread(target=server.warm_search,daemon=True).start()
-    print("Music Lab 0.7.5 is running.",flush=True)
+    print("Music Lab 0.7.8 is running.",flush=True)
     print("Computer: "+local,flush=True)
     if not args.no_browser:webbrowser.open(local)
     tunnel=None

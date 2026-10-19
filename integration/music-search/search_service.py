@@ -154,11 +154,13 @@ class SearchService:
         if track.get("policy") == "SNIP":
             duration = min(duration, 30)
         art = track.get("artwork_url") or (track.get("user") or {}).get("avatar_url")
+        from stream_service import StreamService
+        protected_only = bool((track.get('media') or {}).get('transcodings')) and not StreamService.candidates(track)
         return {"id": str(track["id"]), "kind": "track", "title": track.get("title") or "Без названия",
                 "artist": (track.get("publisher_metadata") or {}).get("artist")
                           or (track.get("user") or {}).get("username") or "SoundCloud",
                 "source": "soundcloud", "duration": duration, "preview": preview,
                 "artist_ref": {"id": str(track["user"]["id"]), "kind": "artist", "source": "soundcloud", "title": track["user"].get("username") or "SoundCloud"} if (track.get("user") or {}).get("id") else None,
-                "unavailable": track.get('policy') == 'BLOCK',
+                "unavailable": track.get('policy') == 'BLOCK' or protected_only,
                 "permalink": track.get("permalink_url") or "",
                 "artwork": {"480x480": art.replace("-large.", "-t500x500.")} if art else None}
