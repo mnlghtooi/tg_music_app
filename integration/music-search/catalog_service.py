@@ -27,14 +27,18 @@ class AudiusSearch:
         items = []
         for t in raw[:10]:
             if not t or not t.get('id'): continue
-            gated = bool(t.get('is_stream_gated'))
-            items.append({'id': str(t['id']), 'kind': 'track', 'source': 'audius',
-                'title': t.get('title') or 'Без названия', 'artist': (t.get('user') or {}).get('name') or '',
-                'duration': t.get('duration') or 0, 'artwork': t.get('artwork'), 'preview': False,
-                'unavailable': gated or t.get('is_streamable') is False,
-                'permalink': urljoin('https://audius.co', t.get('permalink') or ''),
-                'isrc': t.get('isrc') or ''})
+            items.append(self.normalize(t))
         return {'data': items, 'has_more': len(raw) > 10}
+
+    @staticmethod
+    def normalize(t):
+        user = t.get('user') or {}
+        return {'id': str(t['id']), 'kind': 'track', 'source': 'audius',
+            'title': t.get('title') or 'Без названия', 'artist': user.get('name') or '',
+            'duration': t.get('duration') or 0, 'artwork': t.get('artwork'), 'preview': False,
+            'unavailable': bool(t.get('is_stream_gated')) or t.get('is_streamable') is False,
+            'permalink': urljoin('https://audius.co', t.get('permalink') or ''), 'isrc': t.get('isrc') or '',
+            'artist_ref': {'id': str(user['id']), 'kind': 'artist', 'source': 'audius', 'title': user.get('name') or ''} if user.get('id') else None}
 
 
 class CatalogService:

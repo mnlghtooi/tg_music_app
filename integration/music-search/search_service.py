@@ -158,6 +158,7 @@ class SearchService:
                 "artist": (track.get("publisher_metadata") or {}).get("artist")
                           or (track.get("user") or {}).get("username") or "SoundCloud",
                 "source": "soundcloud", "duration": duration, "preview": preview,
+                "artist_ref": {"id": str(track["user"]["id"]), "kind": "artist", "source": "soundcloud", "title": track["user"].get("username") or "SoundCloud"} if (track.get("user") or {}).get("id") else None,
                 "unavailable": track.get('policy') == 'BLOCK',
                 "permalink": track.get("permalink_url") or "",
                 "artwork": {"480x480": art.replace("-large.", "-t500x500.")} if art else None}
