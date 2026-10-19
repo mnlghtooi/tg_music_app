@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             p=urlparse(self.path)
             if p.path=='/healthz':
-                self.respond(200,{'ok':True,'version':'0.7.8'});return
+                self.respond(200,{'ok':True,'version':'0.7.9'});return
             if p.path.startswith("/open/") and hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
                 self.respond(302,headers={"Location":"/","Set-Cookie":"musiclab_access="+KEY+"; HttpOnly; SameSite=Lax; Path=/"})
                 return
@@ -157,14 +157,14 @@ class Handler(BaseHTTPRequestHandler):
             if not self.authenticated():
                 self.respond(403,{"error":"Открой личную ссылку из окна запуска Music Lab."});return
             if migration_get(self,p,MIGRATION):return
-            if p.path in ('/library_transfer.js','/migration_ui.js','/audio_share_ui.js','/mini_seek.js'):
+            if p.path in ('/library_transfer.js','/migration_ui.js','/audio_share_ui.js','/mini_seek.js','/track_availability.js'):
                 self.respond(200,(ROOT/p.path.lstrip('/')).read_bytes(),'text/javascript; charset=utf-8');return
             if p.path=="/":
                 self.respond(200,(ROOT/"index.html").read_bytes(),"text/html; charset=utf-8");return
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.8"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.9"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -269,7 +269,7 @@ if __name__=="__main__":
     a.add_argument('--host',default='127.0.0.1');args=a.parse_args()
     server=ThreadingHTTPServer((args.host,args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.7.8 — SoundCloud",flush=True)
+    print("Music Lab v0.7.9 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()

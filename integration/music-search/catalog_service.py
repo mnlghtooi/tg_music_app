@@ -33,10 +33,14 @@ class AudiusSearch:
     @staticmethod
     def normalize(t):
         user = t.get('user') or {}
+        # Only explicit restrictions mean blocked; missing stream metadata is unknown.
+        blocked = bool(t.get('is_stream_gated')) or t.get('is_streamable') is False
+        availability = ('blocked' if blocked else
+                        'playable' if t.get('is_streamable') is True else 'unknown')
         return {'id': str(t['id']), 'kind': 'track', 'source': 'audius',
             'title': t.get('title') or 'Без названия', 'artist': user.get('name') or '',
             'duration': t.get('duration') or 0, 'artwork': t.get('artwork'), 'preview': False,
-            'unavailable': bool(t.get('is_stream_gated')) or t.get('is_streamable') is False,
+            'availability': availability, 'unavailable': blocked,
             'permalink': urljoin('https://audius.co', t.get('permalink') or ''), 'isrc': t.get('isrc') or '',
             'artist_ref': {'id': str(user['id']), 'kind': 'artist', 'source': 'audius', 'title': user.get('name') or ''} if user.get('id') else None}
 

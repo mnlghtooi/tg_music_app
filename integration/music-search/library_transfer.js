@@ -12,8 +12,12 @@ typeof t.title!=='string'||!t.title.trim()||t.title.length>1000||typeof t.artist
 (t.kind&&t.kind!=='track'))throw Error('В копии есть некорректный трек. Импорт отменён.');
 if(t.duration!==undefined&&(!Number.isFinite(t.duration)||t.duration<0||t.duration>86400))throw Error('Некорректная длительность трека.');
 const artwork={};for(const size of ['480x480','150x150']){const url=t.artwork?.[size];if(typeof url==='string'&&url.startsWith('https://')&&url.length<2048)artwork[size]=url;}
+// Backward-compatible version 1 backup: the legacy preview flag was also set
+// for genuine short songs. Treat it as unverified, not proof of a snippet.
+const statuses=['playable','preview_only','blocked','unknown','temporary_error'];
+const availability=t.unavailable===true?'blocked':statuses.includes(t.availability)?t.availability:'unknown';
 return {id:t.id,source:t.source,kind:'track',title:t.title,artist:t.artist,duration:t.duration||0,
-artwork:Object.keys(artwork).length?artwork:null,permalink:typeof t.permalink==='string'?t.permalink.slice(0,2048):'',preview:!!t.preview,unavailable:!!t.unavailable,artist_ref:entity(t.artist_ref,t.source,'artist'),album_ref:entity(t.album_ref,t.source,'album')};
+artwork:Object.keys(artwork).length?artwork:null,permalink:typeof t.permalink==='string'?t.permalink.slice(0,2048):'',preview:availability==='preview_only',unavailable:availability==='blocked',availability,artist_ref:entity(t.artist_ref,t.source,'artist'),album_ref:entity(t.album_ref,t.source,'album')};
 }
 function unique(items){return [...new Map(items.map(t=>[id(t),t])).values()];}
 function validate(data){

@@ -124,7 +124,9 @@ class BandcampService:
                 except ValueError: continue
                 items.append({'id': identifier(url), 'kind': item_kind, 'title': raw.get('name') or 'Без названия',
                     'artist': raw.get('band_name') or '', 'source': 'bandcamp', 'permalink': url,
-                    'duration': 0, 'preview': False, 'artwork': {'480x480': raw['img']} if raw.get('img') else None})
+                    'duration': 0, 'preview': False,
+                    'availability': 'unknown' if item_kind == 'track' else None,
+                    'artwork': {'480x480': raw['img']} if raw.get('img') else None})
             return items
         items = self.cached(('search', ' '.join(query.casefold().split()), kind), fetch)
         return self.page(items, page, result_limit=50)
@@ -154,7 +156,7 @@ class BandcampService:
             result.append({'id': identifier(track_url), 'kind': 'track', 'source': 'bandcamp',
                 'title': raw.get('title') or 'Без названия', 'artist': raw.get('artist') or artist,
                 'duration': raw.get('duration') or 0, 'permalink': track_url, 'preview': False,
-                'unavailable': not playable,
+                'availability': 'playable' if playable else 'blocked', 'unavailable': not playable,
                 'artwork': {'480x480': 'https://f4.bcbits.com/img/a' + str(art) + '_5.jpg'} if art else None})
             # Keep public player metadata private, so selecting a track from an
             # album does not require reloading each track page.
