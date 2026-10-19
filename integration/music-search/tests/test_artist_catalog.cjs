@@ -107,3 +107,10 @@ test('MusicBrainz check is opt-in and does not claim name-based canonical identi
   const storage=html.match(/const KEY='([^']+)'/);
   assert.equal(storage[1],'musiclab_library_v1');
 });
+
+test('MusicBrainz UI script compiles without changing source-owned player functions',()=>{
+  const start=html.lastIndexOf('<script>');
+  const end=html.indexOf('</script>',start);
+  assert.ok(start>=0&&end>start);
+  assert.doesNotThrow(()=>new vm.Script(html.slice(start+8,end)));
+});
