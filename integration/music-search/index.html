@@ -206,6 +206,38 @@ function playArtist(shuffle=false){let items=entityTracks();if(shuffle)items=ite
 function renderArtistOverview(){
 const root=$('collectionResults');root.replaceChildren();const titles={popular:'Популярное',tracks:'Треки',albums:'Релизы',playlists:'Плейлисты и миксы'};
 const related=collectionItem?.artist_profiles;
+const profileUrl=collectionProfile?.permalink||collectionItem?.permalink;
+if(profileUrl&&['soundcloud','bandcamp','audius'].includes(collectionItem?.source)){
+const section=document.createElement('section');section.className='artist-block';
+const heading=document.createElement('h2');heading.textContent='Идентификация MusicBrainz';section.append(heading);
+const note=document.createElement('p');note.className='muted';
+note.textContent='Совпадения по имени не доказывают, что профили принадлежат одному исполнителю. Можно проверить подтверждённую внешнюю ссылку.';
+section.append(note);
+const check=makeBtn('Проверить профиль в MusicBrainz',async()=>{
+check.disabled=true;note.textContent='Проверяю связи профиля в MusicBrainz…';
+try{
+const args=new URLSearchParams({name:collectionProfile?.title||collectionItem.title,source:collectionItem.source,url:profileUrl});
+const response=await fetch('/api/artists/identity?'+args,{signal:collectionController?.signal});
+const info=await response.json();if(!response.ok)throw Error(info.error||'Не удалось проверить');
+if(!section.isConnected)return;
+if(info.status==='verified_profile_link'&&info.identity_verified===true){
+note.textContent='Профиль этого сервиса связан с исполнителем в MusicBrainz. Другие одноимённые профили этим не подтверждены.';
+const link=document.createElement('a');link.className='entity-link source-link';
+link.href='https://musicbrainz.org/artist/'+encodeURIComponent(info.artist.mbid);
+link.target='_blank';link.rel='noopener noreferrer';link.textContent='MusicBrainz: '+info.artist.name+' ↗';
+section.append(link);
+}else if(info.status==='name_only'){
+note.textContent='Найдены совпадения по имени, но подтверждённой связи с этим профилем нет. Объединение не выполняется.';
+}else if(info.status==='ambiguous'){
+note.textContent='В MusicBrainz неоднозначные связи. Автоматическое объединение запрещено.';
+}else if(info.status==='missing_profile'){
+note.textContent='Источник не предоставил подходящую ссылку на профиль.';
+}else note.textContent='MusicBrainz временно недоступен. Треки и плейлисты не затронуты.';
+}catch(e){
+if(e.name!=='AbortError'&&section.isConnected)note.textContent='Не удалось проверить MusicBrainz. Попробуй позднее.';
+}finally{if(section.isConnected)check.disabled=false;}
+});check.className='minor';section.append(check);root.append(section);
+}
 if(Array.isArray(related)&&related.length>1){
 const section=document.createElement('section');section.className='artist-block';
 const heading=document.createElement('h2');heading.textContent='Профили с таким именем';section.append(heading);
