@@ -89,6 +89,17 @@ test('hold reveals slider, horizontal drag seeks on release without opening full
   assert.equal(ui.panel.hidden, true);
 });
 
+test('holding without movement reveals the panel without jumping backward', async () => {
+  const ui = create();
+  ui.trigger.fire('pointerdown');
+  await tick();
+  ui.trigger.fire('pointerup');
+  ui.trigger.fire('click');
+  assert.equal(ui.audio.currentTime, 20);
+  assert.equal(ui.panel.hidden, false);
+  assert.equal(ui.opened, 0);
+});
+
 test('moving before hold threshold cancels gesture and does not seek', async () => {
   const ui = create({ holdMs: 20 });
   ui.trigger.fire('pointerdown');
