@@ -48,22 +48,40 @@ class LaunchRestartTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             launch.probe_public_tunnel('example.com')
 
-    def test_phone_url_is_only_printed_after_successful_public_health_check(self):
+    def test_phone_url_is_assembled_and_published_after_delayed_dns_success(self):
         out=io.StringIO()
-        with patch.object(launch,'probe_public_tunnel',side_effect=[False,True]) as verify, \
-             patch.object(launch.time,'sleep') as sleep, redirect_stdout(out):
-            self.assertTrue(launch.announce_public_tunnel('example-abc.trycloudflare.com','private-key',attempts=2,pause=0))
-        self.assertEqual(verify.call_count,2)
-        sleep.assert_called_once()
-        self.assertIn('PHONE_URL=https://example-abc.trycloudflare.com/open/private-key',out.getvalue())
+        with patch.object(launch,'probe_public_tunnel',side_effect=[OSError('DNS'),False,True]) as verify, \
+             redirect_stdout(out):
+            self.assertTrue(launch.announce_public_tunnel(
+                'example-abc.trycloudflare.com','private-key',pause=0,progress_every=2))
+        self.assertEqual(verify.call_count,3)
+        output=out.getvalue()
+        self.assertIn('PHONE_URL_PENDING=https://example-abc.trycloudflare.com/open/private-key',output)
+        self.assertIn('PHONE_URL=https://example-abc.trycloudflare.com/open/private-key',output)
+        self.assertIn('Public HTTPS health check passed.',output)
+        self.assertLess(output.index('PHONE_URL_PENDING='),output.index('PHONE_URL='))
 
-    def test_dns_failure_does_not_present_a_verified_phone_link(self):
+    def test_dns_failure_keeps_pending_link_but_no_false_ready_confirmation(self):
         out=io.StringIO()
-        with patch.object(launch,'probe_public_tunnel',side_effect=OSError('Name resolution failed')), \
-             patch.object(launch.time,'sleep'), redirect_stdout(out):
-            self.assertFalse(launch.announce_public_tunnel('example-abc.trycloudflare.com','private-key',attempts=2,pause=0))
-        self.assertIn('WARNING: Cloudflare registered',out.getvalue())
-        self.assertIn('Unverified public hostname',out.getvalue())
+        stop=type('FakeStop',(),{})()
+        stop.is_set=lambda:False
+        waits=iter([False,True])
+        stop.wait=lambda pause:next(waits)
+        with patch.object(launch,'probe_public_tunnel',side_effect=OSError('DNS')), \
+             redirect_stdout(out):
+            self.assertFalse(launch.announce_public_tunnel(
+                'example-abc.trycloudflare.com','private-key',stop_event=stop,pause=0,progress_every=2))
+        self.assertIn('PHONE_URL_PENDING=',out.getvalue())
         self.assertNotIn('PHONE_URL=',out.getvalue())
-        self.assertNotIn('private-key',out.getvalue())
+        self.assertIn('retrying automatically',out.getvalue())
+
+    def test_exit_stops_public_polling(self):
+        out=io.StringIO()
+        with patch.object(launch,'probe_public_tunnel') as verify, \
+             redirect_stdout(out):
+            stopped=launch.threading.Event()
+            stopped.set()
+            self.assertFalse(launch.announce_public_tunnel(
+                'example-abc.trycloudflare.com','private-key',stop_event=stopped,pause=0))
+            verify.assert_not_called()
 
