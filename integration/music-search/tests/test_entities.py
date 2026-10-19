@@ -13,6 +13,46 @@ from catalog_service import AudiusSearch
 
 
 class EntityTests(unittest.TestCase):
+    def test_encrypted_only_soundcloud_audio_is_not_presented_as_playable(self):
+        item=SearchService.normalize(dict(id=1,title='Protected',policy='MONETIZE',media={'transcodings':[
+            dict(url='https://api-v2.soundcloud.com/media',format={'protocol':'ctr-encrypted-hls'},quality='sq')]}))
+        self.assertTrue(item['unavailable'])
+
+    def test_artist_feed_follows_empty_cursor_pages_and_deduplicates(self):
+        offsets = []
+        def handler(r):
+            if r.url.path == '/users/1': return httpx.Response(200, json=dict(id=1, username='Artist'))
+            offset = r.url.params.get('offset'); offsets.append(offset)
+            if offset == '0': return httpx.Response(200, json={'collection': [], 'next_href': 'https://api-v2.soundcloud.com/users/1/tracks?offset=opaque-first&limit=50&client_id=ignored'})
+            entries = [dict(id=i, title='Song '+str(i)) for i in (range(1,7) if offset == 'opaque-first' else range(6,25))]
+            body = dict(collection=entries)
+            if offset == 'opaque-first': body['next_href'] = 'https://api-v2.soundcloud.com/users/1/tracks?offset=opaque-next&limit=50'
+            return httpx.Response(200, json=body)
+        service = self.service(handler)
+        first = service.get('soundcloud','artist','1',1,'tracks')
+        second = service.get('soundcloud','artist','1',2,'tracks')
+        self.assertEqual([t['id'] for t in first['data']], [str(i) for i in range(1,11)])
+        self.assertEqual([t['id'] for t in second['data']], [str(i) for i in range(11,21)])
+        self.assertTrue(second['has_more'])
+        self.assertEqual(offsets, ['0', 'opaque-first', 'opaque-next'])
+
+    def test_artist_feed_rejects_foreign_or_repeated_cursors(self):
+        for nxt in ['https://localhost/users/1/tracks?offset=bad', 'https://api-v2.soundcloud.com/users/1/tracks?limit=50&offset=0&linked_partitioning=1']:
+            service = self.service(lambda r: httpx.Response(200, json={'collection': [], 'next_href': nxt}))
+            with self.assertRaises((ValueError,RuntimeError)): service.sc_rows('1','tracks',1)
+
+    def test_overview_keeps_successful_sections_when_one_source_request_fails(self):
+        service = self.service(lambda r: httpx.Response(500))
+        def get(source, kind, item_id, page=1, section=''):
+            if section == 'popular': raise RuntimeError('unavailable')
+            return {'profile': {'title':'Artist','description':'https://artist.bandcamp.com/album/release https://localhost/private'}, 'data':[], 'has_more':False}
+        service.get = get
+        overview = service.overview('soundcloud','1')
+        self.assertTrue(overview['blocks'][0]['error'])
+        self.assertEqual(len(overview['blocks']),3)
+        self.assertEqual(len(overview['links']),1)
+        self.assertEqual(overview['links'][0]['entity']['kind'],'album')
+
     def service(self, handler):
         client = httpx.Client(transport=httpx.MockTransport(handler))
         return EntityService(SearchService(lambda: 'test', client), BandcampService(lambda u: u, client), AudiusSearch(client))

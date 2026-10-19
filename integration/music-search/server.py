@@ -64,6 +64,8 @@ from catalog_service import CatalogService, CatalogError
 CATALOG=CatalogService(SEARCH_SERVICE,BANDCAMP)
 from entity_service import EntityService
 ENTITIES=EntityService(SEARCH_SERVICE,BANDCAMP,CATALOG.services["audius"])
+from audio_share import AudioShare
+AUDIO_SHARE=AudioShare(ROOT,ENTITIES)
 from migration_service import MigrationService, handle_get as migration_get, handle_post as migration_post
 MIGRATION=MigrationService(SEARCH_SERVICE,BANDCAMP,catalog=CATALOG)
 
@@ -91,6 +93,23 @@ class Handler(BaseHTTPRequestHandler):
         for k,v in (headers or {}).items(): self.send_header(k,v)
         self.end_headers()
         if self.command!="HEAD": self.wfile.write(body)
+    def local_setup(self):
+        host=self.headers.get('Host','')
+        return (self.client_address[0] in ('127.0.0.1','::1') and host.split(':')[0] in ('127.0.0.1','localhost')
+            and not self.headers.get('CF-Connecting-IP') and not self.headers.get('X-Forwarded-For')
+            and self.headers.get('Origin','http://'+host) in ('http://'+host,'https://'+host))
+
+    def audio_file(self,job):
+        from urllib.parse import quote
+        path=job['path'];size=path.stat().st_size
+        self.send_response(200)
+        self.send_header('Content-Type','audio/mpeg');self.send_header('Content-Length',str(size))
+        self.send_header('Content-Disposition',"attachment; filename*=UTF-8''"+quote(job['filename']))
+        self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.end_headers()
+        if self.command!='HEAD':
+            with path.open('rb') as stream:
+                while chunk:=stream.read(65536):self.wfile.write(chunk)
+
     def authenticated(self):
         try:
             c=SimpleCookie();c.load(self.headers.get("Cookie",""))
@@ -101,28 +120,51 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authenticated():
             self.close_connection=True
             self.respond(403,{'error':'Открой личную ссылку Music Lab.'});return
+        if self.path.startswith('/api/audio-share/'):
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0 < length <= 20000: raise ValueError('Некорректный запрос.')
+                data=json.loads(self.rfile.read(length))
+                if not isinstance(data,dict): raise ValueError('Некорректный запрос.')
+                if self.path=='/api/audio-share/start':result=AUDIO_SHARE.start(data.get('source'),data.get('id'))
+                elif self.path=='/api/audio-share/telegram':result=AUDIO_SHARE.prepared_message(data.get('job',''),data.get('init_data',''),data.get('origin',''))
+                elif self.path=='/api/audio-share/config':
+                    if not self.local_setup():
+                        self.respond(403,{'error':'Подключи бота в локальном браузере на компьютере.'});return
+                    result=AUDIO_SHARE.configure(data.get('token'))
+                else:self.respond(404,{'error':'Not found'});return
+                self.respond(200,result)
+            except (ValueError,TypeError,RuntimeError) as error:
+                self.close_connection=True
+                self.respond(400,{'error':str(error) if isinstance(error,(ValueError,RuntimeError)) else 'Некорректный запрос.'})
+            return
         if not self.path.startswith('/api/migration/'):
+
             self.respond(404,{'error':'Not found'});return
         migration_post(self,MIGRATION)
     def do_GET(self):
         try:
             p=urlparse(self.path)
             if p.path=='/healthz':
-                self.respond(200,{'ok':True,'version':'0.7.5'});return
+                self.respond(200,{'ok':True,'version':'0.7.6'});return
             if p.path.startswith("/open/") and hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
                 self.respond(302,headers={"Location":"/","Set-Cookie":"musiclab_access="+KEY+"; HttpOnly; SameSite=Lax; Path=/"})
                 return
+            if p.path.startswith('/api/shared-audio/'):
+                try:job=AUDIO_SHARE.public_file(p.path.rsplit('/',1)[-1].removesuffix('.mp3'))
+                except ValueError:self.respond(410,{'error':'Ссылка устарела.'});return
+                self.audio_file(job);return
             if not self.authenticated():
                 self.respond(403,{"error":"Открой личную ссылку из окна запуска Music Lab."});return
             if migration_get(self,p,MIGRATION):return
-            if p.path in ('/library_transfer.js','/migration_ui.js'):
+            if p.path in ('/library_transfer.js','/migration_ui.js','/audio_share_ui.js'):
                 self.respond(200,(ROOT/p.path.lstrip('/')).read_bytes(),'text/javascript; charset=utf-8');return
             if p.path=="/":
                 self.respond(200,(ROOT/"index.html").read_bytes(),"text/html; charset=utf-8");return
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.5"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.6"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -137,6 +179,19 @@ class Handler(BaseHTTPRequestHandler):
                     self.respond(400,{'error':'Неизвестный тип поиска'});return
                 result=CATALOG.query('audius',q,page,kind) if provider=='audius' else (CATALOG if provider=='all' else BANDCAMP if provider=='bandcamp' else SEARCH_SERVICE).search(q,page,kind)
                 self.respond(200,result);return
+            if p.path=='/api/artist':
+                params=parse_qs(p.query)
+                source=params.get('source',[''])[0];item_id=params.get('id',[''])[0]
+                if source not in ('soundcloud','bandcamp','audius') or len(item_id)>2048:
+                    self.respond(400,{'error':'Некорректный исполнитель.'});return
+                self.respond(200,ENTITIES.overview(source,item_id));return
+            if p.path=='/api/audio-share/config':
+                local=self.local_setup()
+                self.respond(200,{'configured':bool(AUDIO_SHARE.token()),'username':'mnlgth_music_app_bot','local_setup':local});return
+            if p.path=='/api/audio-share/status':
+                self.respond(200,AUDIO_SHARE.status(parse_qs(p.query).get('job',[''])[0]));return
+            if p.path=='/api/audio-share/file':
+                self.audio_file(AUDIO_SHARE.file(parse_qs(p.query).get('job',[''])[0]));return
             if p.path=="/api/entity":
                 params=parse_qs(p.query)
                 try:
@@ -214,7 +269,7 @@ if __name__=="__main__":
     a.add_argument('--host',default='127.0.0.1');args=a.parse_args()
     server=ThreadingHTTPServer((args.host,args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.7.5 — SoundCloud",flush=True)
+    print("Music Lab v0.7.6 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()

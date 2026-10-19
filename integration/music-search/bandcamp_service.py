@@ -181,6 +181,9 @@ class BandcampService:
         return self.page(items, page)
 
     def stream(self, item_id):
+        return self.tokenize(self.audio_url(item_id))
+
+    def audio_url(self, item_id):
         url = decode_id(item_id, 'track')
         with self.lock:
             hit = self.cache.get(('audio', item_id))
@@ -192,4 +195,4 @@ class BandcampService:
         host = urlparse(media).hostname or ''
         if urlparse(media).scheme != 'https' or not host.endswith('.bcbits.com'):
             raise ValueError('Unsupported Bandcamp audio host')
-        return self.tokenize(media)
+        return media
