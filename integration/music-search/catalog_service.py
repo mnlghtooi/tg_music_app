@@ -45,8 +45,11 @@ class AudiusSearch:
             'artist_ref': {'id': str(user['id']), 'kind': 'artist', 'source': 'audius', 'title': user.get('name') or ''} if user.get('id') else None}
 
 
+from music_providers import catalog_sources
+
+
 class CatalogService:
-    SOURCES = ('soundcloud', 'bandcamp', 'audius')
+    SOURCES = catalog_sources()
 
     def __init__(self, soundcloud, bandcamp, audius=None):
         self.services = {'soundcloud': soundcloud, 'bandcamp': bandcamp,
