@@ -165,9 +165,15 @@ const title=document.createElement('span');title.className='meta';
 if(['artist','playlist','album'].includes(item.kind)){
 const name=document.createElement('span');name.textContent=item.title;name.style.display='block';
 const label=document.createElement('small');label.className='muted result-kind';label.textContent=item.kind==='artist'?'Исполнитель':item.kind==='album'?'Альбом':'Плейлист';
-if(item.kind==='artist'&&Array.isArray(item.artist_profiles)&&item.artist_profiles.length>1){
-label.textContent+=' · '+item.artist_profiles.length+' профиля с таким именем · не подтверждены';
-}else{label.textContent+=' · '+({soundcloud:'SoundCloud',bandcamp:'Bandcamp',audius:'Audius'}[item.source]||item.source);}
+if(item.kind==='artist'){
+// An artist is a catalog entity; do not label the search card by whichever
+// provider happened to supply the representative account. Source profiles
+// remain selectable in the artist detail when multiple are found.
+if(Array.isArray(item.artist_profiles)&&item.artist_profiles.length>1){
+const count=item.artist_profiles.length;
+label.textContent+=' · '+count+' '+(count%10===1&&count%100!==11?'профиль':count%10>=2&&count%10<=4&&(count%100<12||count%100>14)?'профиля':'профилей')+' с таким именем · не подтверждены';
+}
+}else{label.textContent+=' · '+sourceName(item.source);}
 title.append(name,label);if(item.kind!=='artist'&&item.artist){label.textContent+=' · '+item.artist;}
 clickable(title,()=>openCollection(item,title));const image=cover(item);if(image&&image.startsWith('https://')){const img=document.createElement('img');img.src=image;img.alt='';img.className='entity-thumb';img.loading='lazy';row.append(img);}row.append(title);
 }else{
