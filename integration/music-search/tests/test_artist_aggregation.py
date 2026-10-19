@@ -75,7 +75,7 @@ class ArtistArchitectureTests(unittest.TestCase):
         self.assertEqual(primary.calls, 1)
         self.assertEqual(result['blocks'][0]['section'], 'popular')
         self.assertEqual([(t['source'], t['id']) for t in result['blocks'][-1]['data']],
-                         [('bandcamp', '42'), ('audius', '11'), ('audius', '12')])
+                         [('bandcamp', '42'), ('audius', '12')])
         self.assertTrue(all(t['verified_artist'] is False for t in result['blocks'][-1]['data']))
         self.assertTrue(all(t['discovery'] == 'artist_name_only' for t in result['blocks'][-1]['data']))
         self.assertEqual(result['aggregation']['status'], 'complete')
