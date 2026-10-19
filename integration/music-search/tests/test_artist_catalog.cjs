@@ -42,3 +42,40 @@ test('artist discovered entries keep provider links and avoid audio reset on nav
   assert.doesNotMatch(openCollection,/audio\.pause\(/);
   assert.doesNotMatch(openCollection,/audio\.removeAttribute\(/);
 });
+
+test('unverified grouped artist search rows expose provider alternatives without treating them as original IDs', () => {
+  const start = html.indexOf('function renderResultRows(');
+  const end = html.indexOf('function sourceName(', start);
+  const block = html.slice(start, end);
+  assert.match(block, /item\.artist_profiles\.length>1/);
+  assert.match(block, /профиля с таким именем · не подтверждены/);
+  assert.match(block, /openCollection\(item,title\)/);
+  const overview = html.slice(html.indexOf('function renderArtistOverview('), html.indexOf('function renderCollectionContent('));
+  assert.match(overview, /Профили с таким именем/);
+  assert.match(overview, /не подтверждённые аккаунты/);
+  assert.match(overview, /openCollection\(profile,button\)/);
+  const load = html.slice(html.indexOf('async function loadCollection('), html.indexOf("$('entityPlay').onclick"));
+  assert.match(load, /source:collectionItem\.source/);
+  assert.match(load, /id:collectionItem\.id/);
+  assert.doesNotMatch(overview, /audio\.pause\(/);
+});
+
+test('search cache preserves all original provider profile ids after grouped artist result serialization', () => {
+  const line = html.match(/function storeTrack\(t\)\{[^\n]+/)[0];
+  const context = {availability};
+  vm.createContext(context);
+  vm.runInContext(line + '; globalThis.saveGrouped=storeTrack',context);
+  const grouped={
+    source:'soundcloud',id:'a',kind:'artist',title:'Portishead',
+    grouping:'name_only',artist_match_count:2,identity_verified:false,
+    artist_profiles:[
+      {source:'soundcloud',id:'a',kind:'artist',title:'Portishead'},
+      {source:'bandcamp',id:'b',kind:'artist',title:'Portishead'}
+    ]
+  };
+  const saved=JSON.parse(JSON.stringify(context.saveGrouped(grouped)));
+  assert.equal(saved.artist_profiles.length,2);
+  assert.deepEqual(saved.artist_profiles.map(x=>x.source+':'+x.id),['soundcloud:a','bandcamp:b']);
+  assert.equal(saved.grouping,'name_only');
+  assert.equal(saved.identity_verified,false);
+});
