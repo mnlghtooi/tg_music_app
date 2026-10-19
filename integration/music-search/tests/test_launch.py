@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import unittest
 from unittest.mock import patch
+from contextlib import redirect_stdout
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import launch
 
@@ -34,3 +35,35 @@ class LaunchRestartTests(unittest.TestCase):
              patch.object(launch.subprocess,'run') as stop:
             launch.restart_previous()
             stop.assert_not_called()
+
+    def test_tunnel_health_url_is_public_and_keyless(self):
+        with patch.object(launch.urllib.request,'urlopen') as opened:
+            response=opened.return_value.__enter__.return_value
+            response.status=200
+            response.read.return_value=b'{"ok":true,"version":"0.7.10"}'
+            self.assertTrue(launch.probe_public_tunnel('example-abc.trycloudflare.com'))
+            request=opened.call_args.args[0]
+            self.assertEqual(request.full_url,'https://example-abc.trycloudflare.com/healthz')
+            self.assertNotIn('/open/',request.full_url)
+        with self.assertRaises(ValueError):
+            launch.probe_public_tunnel('example.com')
+
+    def test_phone_url_is_only_printed_after_successful_public_health_check(self):
+        out=io.StringIO()
+        with patch.object(launch,'probe_public_tunnel',side_effect=[False,True]) as verify, \
+             patch.object(launch.time,'sleep') as sleep, redirect_stdout(out):
+            self.assertTrue(launch.announce_public_tunnel('example-abc.trycloudflare.com','private-key',attempts=2,pause=0))
+        self.assertEqual(verify.call_count,2)
+        sleep.assert_called_once()
+        self.assertIn('PHONE_URL=https://example-abc.trycloudflare.com/open/private-key',out.getvalue())
+
+    def test_dns_failure_does_not_present_a_verified_phone_link(self):
+        out=io.StringIO()
+        with patch.object(launch,'probe_public_tunnel',side_effect=OSError('Name resolution failed')), \
+             patch.object(launch.time,'sleep'), redirect_stdout(out):
+            self.assertFalse(launch.announce_public_tunnel('example-abc.trycloudflare.com','private-key',attempts=2,pause=0))
+        self.assertIn('WARNING: Cloudflare registered',out.getvalue())
+        self.assertIn('Unverified public hostname',out.getvalue())
+        self.assertNotIn('PHONE_URL=',out.getvalue())
+        self.assertNotIn('private-key',out.getvalue())
+
