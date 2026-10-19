@@ -75,7 +75,7 @@ class MusicBrainzIdentity:
             delay=self.interval-(time.monotonic()-self.last)
             if delay>0:time.sleep(delay)
         self.last=time.monotonic()
-        response=self.client.get(_MUSICBRAINZ+path,params=params)
+        response=self.client.get(_MUSICBRAINZ+path,params=params,headers={'User-Agent':_AGENT,'Accept':'application/json'})
         response.raise_for_status()
         data=response.json()
         if not isinstance(data,dict):raise ValueError('Unexpected MusicBrainz response')
