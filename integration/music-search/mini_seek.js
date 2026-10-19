@@ -71,7 +71,7 @@
       gesture = {
         id: e.pointerId, x: e.clientX, y: e.clientY,
         start: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
-        preview: audio.currentTime || 0, active: false
+        preview: audio.currentTime || 0, active: false, moved: false
       };
       holdTimer = setTimeout(() => {
         holdTimer = null;
@@ -98,6 +98,7 @@
         return;
       }
       const duration = durationOf(audio);
+      gesture.moved = Math.abs(e.clientX - gesture.x) >= 4;
       gesture.preview = scrubTarget(
         gesture.start, e.clientX - gesture.x,
         trigger.getBoundingClientRect().width || 1, duration
@@ -108,6 +109,7 @@
     function onPointerUp(e) {
       if (!gesture || e.pointerId !== gesture.id) return;
       const isScrubbing = gesture.active;
+      const moved = gesture.moved;
       const target = gesture.preview;
       releaseGesture();
       if (isScrubbing) {
@@ -116,7 +118,8 @@
         swallowClick = true;
         clearTimeout(swallowTimer);
         swallowTimer = setTimeout(() => { swallowClick = false; }, 450);
-        commit(target);
+        if (moved) commit(target);
+        else sync(); // Holding without moving only reveals the slider.
       }
     }
     function onPointerCancel(e) {
@@ -148,7 +151,7 @@
     slider.addEventListener('blur', () => { editingSlider = false; sync(); });
     closeButton.addEventListener('click', close);
     // Explicit track switches clear the quick-scrub UI.
-    audio.addEventListener('emptied', close);
+    audio.addEventListener('emptied', () => { releaseGesture(); close(); });
     audio.addEventListener('durationchange', sync);
     audio.addEventListener('loadedmetadata', sync);
     audio.addEventListener('timeupdate', sync);
