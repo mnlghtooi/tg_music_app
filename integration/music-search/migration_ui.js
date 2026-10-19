@@ -1,31 +1,72 @@
-/* Public playlist import UI; called with explicit library access from the player. */
-window.MigrationUI={mount({getLibrary,commitLibrary,onChange}){
+/* Automatic cross-service import. Only uncertain rows need user attention. */
+window.MigrationUI={mount({getLibrary,commitLibrary,onChange,playTrack}){
 const $=id=>document.getElementById(id),screen=$('migrationView'),notice=$('migrationStatus');
-let opener=null,busy=false,aborter=null,pending=null,previewPage=0;
-const message=t=>{notice.textContent=t;};
-async function request(path,body,signal){const response=await fetch('/api/migration/'+path,{signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const data=await response.json();if(!response.ok)throw Error(data.error||'Не удалось получить данные.');return data;}
-function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function setBusy(value){busy=value;for(const id of ['publicPlaylistLoad','publicPlaylistUrl','migrationMatch','migrationApply','migrationSource'])$(id).disabled=value;$('migrationCancel').hidden=!value;}
-async function run(fn){if(busy)return;setBusy(true);aborter=new AbortController();try{await fn(aborter.signal);}catch(e){message(e.name==='AbortError'?'Остановлено. Уже найденные совпадения сохранены до закрытия страницы.':e.message);}finally{setBusy(false);if(pending)render();}}
-async function loadPlaylist(signal){
-pending=null;$('migrationPreview').hidden=true;message('Получаю список из публичного плейлиста…');
-const data=await request('public-playlist',{url:$('publicPlaylistUrl').value.trim()},signal);
-pending={name:data.name,tracks:data.data,choices:Array(data.data.length).fill(null),candidates:Array(data.data.length).fill(null),errors:{},skipped:data.skipped,source_url:data.source_url,total:data.total,complete:data.complete};previewPage=0;
-$('migrationPreview').hidden=false;$('migrationPlaylistName').textContent=data.name;$('migrationOriginalLink').href=data.source_url;
-$('publicPlaylistCompleteness').textContent=data.complete?'Получен полный список: '+data.received+' из '+data.total+' треков.':data.total===null?'Получено '+data.received+' треков. Полноту списка Spotify подтвердить не удалось.':'Получено только '+data.received+' из '+data.total+' треков. Будет импортирована только полученная часть.';
-if(data.skipped)$('publicPlaylistCompleteness').textContent+=' Пропущено недоступных записей или подкастов: '+data.skipped+'.';
-render();message(data.data.length?'Выбери каталог и нажми «Подобрать треки».':'В плейлисте нет доступных музыкальных записей.');
+const names={soundcloud:'SoundCloud',bandcamp:'Bandcamp',audius:'Audius'};
+let opener=null,busy=false,aborter=null,pending=null,previewPage=0,reviewLimit=25,missingLimit=25;
+const message=text=>{notice.textContent=text;};
+async function request(path,body,signal){
+ const response=await fetch('/api/migration/'+path,{signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
+ const data=await response.json();if(!response.ok){const error=Error(data.error||'Не удалось получить данные.');error.code=data.code;throw error;}return data;
 }
-$('publicPlaylistLoad').onclick=()=>run(loadPlaylist);
-$('publicPlaylistUrl').onkeydown=e=>{if(e.key==='Enter')run(loadPlaylist);};
-function render(){if(!pending)return;const root=$('migrationRows');root.replaceChildren();const start=previewPage*25;for(let i=start;i<Math.min(start+25,pending.tracks.length);i++){const original=pending.tracks[i],row=document.createElement('div');row.className='migration-row';const label=document.createElement('label');label.textContent=(i+1)+'. '+original.title+' — '+original.artist;label.htmlFor='migrationChoice'+i;const select=document.createElement('select');select.id='migrationChoice'+i;select.setAttribute('aria-label','Совпадение для '+original.title);const skip=document.createElement('option');skip.value='';skip.textContent=pending.errors[i]?'Ошибка поиска: повтори подбор':pending.candidates[i]===null?'Ещё не проверено':pending.candidates[i].length?'Не переносить этот трек':'Совпадений нет';select.append(skip);for(const [j,t] of (pending.candidates[i]||[]).entries()){const option=document.createElement('option');option.value=String(j);option.textContent=t.title+' — '+t.artist+' · '+Math.round(t.score*100)+'%'+(t.preview?' · превью':'');select.append(option);}const selected=pending.choices[i];if(selected){const at=pending.candidates[i].findIndex(t=>t.id===selected.id&&t.source===selected.source);select.value=String(at);}select.disabled=busy||pending.candidates[i]===null;select.onchange=()=>{pending.choices[i]=select.value===''?null:pending.candidates[i][Number(select.value)];counts();};const backlink=document.createElement('a');backlink.href=original.source_url;backlink.target='_blank';backlink.rel='noopener noreferrer';backlink.textContent='Оригинал в Spotify ↗';row.append(label,backlink,select);root.append(row);}counts();$('migrationPage').textContent='Страница '+(previewPage+1)+' из '+Math.max(1,Math.ceil(pending.tracks.length/25));$('migrationPrev').disabled=previewPage===0;$('migrationNext').disabled=(previewPage+1)*25>=pending.tracks.length;}
-function counts(){if(!pending)return;const selected=pending.choices.filter(Boolean).length,checked=pending.candidates.filter(x=>x!==null).length;$('migrationCounts').textContent='Проверено '+checked+' из '+pending.tracks.length+' · выбрано '+selected+' · без выбранного совпадения '+(pending.tracks.length-selected);$('migrationApply').textContent='Импортировать выбранные ('+selected+')';$('migrationApply').disabled=busy||!selected||!!pending.applied;}
-async function match(signal){if(!pending)return;const source=$('migrationSource').value;if(pending.source&&pending.source!==source){pending.candidates.fill(null);pending.choices.fill(null);pending.errors={};}pending.source=source;for(let i=0;i<pending.tracks.length;i++){if(pending.candidates[i]!==null)continue;message('Подбираю '+(i+1)+' из '+pending.tracks.length+'…');try{const result=await request('resolve',{track:pending.tracks[i],source},signal);pending.candidates[i]=result.data;delete pending.errors[i];const [best,second]=result.data;pending.choices[i]=best&&best.score>=.9&&(!second||best.score-second.score>=.08)?best:null;}catch(e){if(e.name==='AbortError')throw e;pending.errors[i]=e.message;throw e;}render();}message('Подбор завершён. Проверь варианты и импортируй выбранные треки. Неуверенные совпадения нужно выбрать вручную.');}
-$('migrationSource').onchange=()=>{if(pending){pending.candidates.fill(null);pending.choices.fill(null);pending.errors={};pending.source=null;render();message('Каталог изменён. Подбери совпадения заново.');}};
-$('migrationMatch').onclick=()=>run(async signal=>{await match(signal);}).finally(()=>render());
-$('migrationCancel').onclick=()=>aborter?.abort();
-$('migrationPrev').onclick=()=>{if(previewPage>0){previewPage--;render();}};$('migrationNext').onclick=()=>{if(pending&&(previewPage+1)*25<pending.tracks.length){previewPage++;render();}};
-$('migrationApply').onclick=()=>{if(!pending||busy||pending.applied)return;const selected=LibraryTransfer.unique(pending.choices.filter(Boolean)).map(({score,...t})=>t);if(!selected.length){message('Сначала выбери совпадения.');return;}try{const lib=getLibrary();const playlist={id:'import-'+Date.now()+'-'+Math.random().toString(36).slice(2),name:pending.name.slice(0,200),tracks:selected};commitLibrary({...lib,playlists:[...lib.playlists,playlist]});onChange();pending.applied=true;message('Создан плейлист «'+pending.name+'»: '+selected.length+' треков. Не выбранные записи остались в списке для проверки.');$('migrationApply').disabled=true;}catch(e){message('Импорт не сохранён: '+e.message);}};
+function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function setBusy(value){busy=value;for(const id of ['publicPlaylistLoad','publicPlaylistUrl','migrationMatch','migrationApply'])$(id).disabled=value;$('migrationCancel').hidden=!value;}
+async function run(fn){if(busy)return;setBusy(true);aborter=new AbortController();try{await fn(aborter.signal);}catch(e){message(e.name==='AbortError'?'Поиск остановлен. Найденные треки сохранены до закрытия страницы.':e.message);}finally{setBusy(false);if(pending)render();}}
+async function loadPlaylist(signal){
+ pending=null;$('migrationPreview').hidden=true;message('Получаю список из публичного плейлиста…');
+ const data=await request('public-playlist',{url:$('publicPlaylistUrl').value.trim()},signal);
+ pending={name:data.name,tracks:data.data,choices:Array(data.data.length).fill(null),results:Array(data.data.length).fill(null),errors:{},excluded:new Set(),skipped:data.skipped,source_url:data.source_url,total:data.total,complete:data.complete};
+ previewPage=0;reviewLimit=25;missingLimit=25;$('migrationReview').open=false;$('migrationMissing').open=false;
+ $('migrationPreview').hidden=false;$('migrationPlaylistName').textContent=data.name;$('migrationOriginalLink').href=data.source_url;
+ $('publicPlaylistCompleteness').textContent=data.complete?'Получен полный список: '+data.received+' из '+data.total+' треков.':data.total===null?'Получено '+data.received+' треков. Полноту списка Spotify подтвердить не удалось.':'Получено только '+data.received+' из '+data.total+' треков. Будет импортирована только полученная часть.';
+ if(data.skipped)$('publicPlaylistCompleteness').textContent+=' Пропущено недоступных записей или подкастов: '+data.skipped+'.';
+ render();if(data.data.length)await match(signal);else message('В плейлисте нет доступных музыкальных записей.');
+}
+function groups(){const found=[],review=[],missing=[];let waiting=0;pending.tracks.forEach((t,i)=>{const result=pending.results[i];if(pending.choices[i])found.push(i);else if(result?.best)review.push(i);else if(result||pending.errors[i])missing.push(i);else waiting++;});return {found,review,missing,waiting};}
+function time(seconds){return Number.isFinite(seconds)&&seconds>0?Math.floor(seconds/60)+':'+String(Math.round(seconds%60)).padStart(2,'0'):'';}
+function row(i,kind){
+ const original=pending.tracks[i],result=pending.results[i],chosen=pending.choices[i],candidate=chosen||result?.best;
+ const root=document.createElement('div');root.className='migration-row';root.dataset.originalIndex=i;
+ const title=document.createElement('strong');title.textContent=original.title+' — '+original.artist;root.append(title);
+ const meta=document.createElement('span');meta.className='match-meta';
+ if(chosen){meta.classList.add('match-found');meta.textContent=(result?.state==='matched'?'✓ Найдено':'✓ Подтверждено тобой')+' · '+(names[chosen.source]||chosen.source)+(time(chosen.duration)?' · '+time(chosen.duration):'');}
+ else if(candidate){meta.classList.add('match-warning');meta.textContent=pending.excluded.has(i)?'Пропущено тобой':(candidate.assessment?.reasons||[]).join(' · ')||'Нужно подтвердить версию записи';}
+ else meta.textContent=pending.errors[i]|| (result?.state==='incomplete'?'Не все сервисы ответили — можно повторить поиск':'Подходящая запись не найдена');
+ root.append(meta);
+ if(candidate&&!chosen){const suggestion=document.createElement('span');suggestion.className='match-meta';suggestion.textContent='Возможный вариант: '+candidate.title+' — '+candidate.artist+' · '+(names[candidate.source]||candidate.source)+(time(candidate.duration)?' · '+time(candidate.duration):'');root.append(suggestion);}
+ const actions=document.createElement('div');actions.className='match-actions';
+ if(candidate&&typeof playTrack==='function'){const play=document.createElement('button');play.className='minor';play.textContent='▶ Послушать';play.onclick=()=>playTrack(candidate);actions.append(play);}
+ if(candidate){const choose=document.createElement('button');choose.className='minor';choose.disabled=busy||!!pending.applied;choose.textContent=chosen?'Пропустить':pending.excluded.has(i)?'Вернуть':'Использовать вариант';choose.onclick=()=>{if(chosen){pending.choices[i]=null;pending.excluded.add(i);}else{pending.choices[i]=candidate;pending.excluded.delete(i);}render();};actions.append(choose);}
+ const backlink=document.createElement('a');backlink.href=original.source_url;backlink.target='_blank';backlink.rel='noopener noreferrer';backlink.textContent='Оригинал в Spotify ↗';actions.append(backlink);root.append(actions);return root;
+}
+function render(){
+ if(!pending)return;const g=groups();const pageCount=Math.max(1,Math.ceil(g.found.length/25));previewPage=Math.min(previewPage,pageCount-1);
+ $('migrationRows').replaceChildren(...g.found.slice(previewPage*25,previewPage*25+25).map(i=>row(i,'found')));
+ $('migrationPage').textContent='Страница '+(previewPage+1)+' из '+pageCount;$('migrationPrev').disabled=previewPage===0;$('migrationNext').disabled=previewPage+1>=pageCount;
+ $('migrationReview').hidden=!g.review.length;$('migrationReviewTitle').textContent='Нужна проверка ('+g.review.length+')';$('migrationReviewRows').replaceChildren(...g.review.slice(0,reviewLimit).map(i=>row(i,'review')));$('migrationReviewMore').hidden=g.review.length<=reviewLimit;
+ $('migrationMissing').hidden=!g.missing.length;$('migrationMissingTitle').textContent='Не найдены или не проверены ('+g.missing.length+')';$('migrationMissingRows').replaceChildren(...g.missing.slice(0,missingLimit).map(i=>row(i,'missing')));$('migrationMissingMore').hidden=g.missing.length<=missingLimit;
+ $('migrationCounts').textContent='Найдено '+g.found.length+' из '+pending.tracks.length+' · проверить '+g.review.length+' · не найдено '+g.missing.length+(g.waiting?' · осталось '+g.waiting:'');
+ $('migrationApply').textContent='Импортировать '+g.found.length+' треков';$('migrationApply').disabled=busy||!g.found.length||!!pending.applied;$('migrationMatch').disabled=busy||!!pending.applied;
+ const failed=[...new Set(pending.results.flatMap(r=>r?.failed_sources||[]))];$('migrationSourceWarning').hidden=!failed.length;$('migrationSourceWarning').textContent=failed.length?'Не удалось полностью проверить: '+failed.map(x=>names[x]||x).join(', ')+'. Их записи могут отсутствовать в результатах.':'';
+}
+async function match(signal){
+ if(!pending)return;let paused=false;
+ for(let i=0;i<pending.tracks.length;i++){
+  if(pending.choices[i]||pending.excluded.has(i))continue;
+  message('Ищу во всех сервисах: '+(i+1)+' из '+pending.tracks.length+'…');
+  try{const result=await request('resolve',{track:pending.tracks[i]},signal);pending.results[i]=result;pending.choices[i]=result.selected||null;delete pending.errors[i];}
+  catch(e){if(e.name==='AbortError')throw e;pending.errors[i]=e.message;if(e.code==='sources_unavailable'){paused=true;render();break;}}
+  render();
+ }
+ message(paused?'Сервисы временно недоступны. Найденное сохранено — можно повторить поиск позднее.':'Поиск завершён. Можно импортировать найденные треки. Сомнительные варианты — в разделе «Нужна проверка».');
+}
+$('publicPlaylistLoad').onclick=()=>run(loadPlaylist);$('publicPlaylistUrl').onkeydown=e=>{if(e.key==='Enter')run(loadPlaylist);};
+$('migrationMatch').onclick=()=>run(match);$('migrationCancel').onclick=()=>aborter?.abort();
+$('migrationPrev').onclick=()=>{if(previewPage>0){previewPage--;render();}};$('migrationNext').onclick=()=>{previewPage++;render();};
+$('migrationReviewMore').onclick=()=>{reviewLimit+=25;render();};$('migrationMissingMore').onclick=()=>{missingLimit+=25;render();};
+$('migrationApply').onclick=()=>{
+ if(!pending||busy||pending.applied)return;const selected=LibraryTransfer.unique(pending.choices.filter(Boolean)).map(({score,assessment,...t})=>t);if(!selected.length)return;
+ try{const lib=getLibrary();const playlist={id:'import-'+Date.now()+'-'+Math.random().toString(36).slice(2),name:pending.name.slice(0,200),tracks:selected};commitLibrary({...lib,playlists:[...lib.playlists,playlist]});onChange();pending.applied=true;message('Создан плейлист «'+pending.name+'»: '+selected.length+' треков. Остальные записи не добавлены.');render();}catch(e){message('Импорт не сохранён: '+e.message);}
+};
 $('migrationExportSource').onclick=()=>{if(pending)download('spotify-track-list.json',{format:'musiclab-source-list',version:1,source:'spotify',source_url:pending.source_url,name:pending.name,tracks:pending.tracks,total:pending.total,complete:pending.complete,skipped:pending.skipped});};
 $('libraryExport').onclick=()=>{try{const copy={format:'musiclab-library',version:1,exported_at:new Date().toISOString(),library:getLibrary()};LibraryTransfer.validate(copy);download('musiclab-library-'+new Date().toISOString().slice(0,10)+'.json',copy);message('Копия библиотеки подготовлена. В ней плейлисты, лайки и дизлайки.');}catch(e){message(e.message);}};
 let incoming=null;
