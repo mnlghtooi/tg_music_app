@@ -37,5 +37,21 @@ const playlists=current.playlists.map(p=>({...p,tracks:p.tracks.slice()}));
 for(const p of incoming.playlists){const present=playlists.find(x=>x.id===p.id);if(present)present.tracks=unique([...present.tracks,...p.tracks]);else playlists.push({...p,tracks:p.tracks.slice()});}
 return {likes,dislikes,playlists};
 }
-const api={validate,merge,unique};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.LibraryTransfer=api;
+function summary(library){
+return {likes:library.likes.length,dislikes:library.dislikes.length,
+playlists:library.playlists.length,
+playlistTracks:library.playlists.reduce((n,p)=>n+p.tracks.length,0)};
+}
+function prepareBackup(library,exportedAt=new Date().toISOString()){
+// Normalize a snapshot, then check that the *serialized* file is restorable.
+// Do not change the current browser library or its localStorage contents.
+const safe=validate({format:'musiclab-library',version:1,library});
+const copy={format:'musiclab-library',version:1,exported_at:exportedAt,library:safe};
+const content=JSON.stringify(copy,null,2);
+const restored=validate(JSON.parse(content));
+if(JSON.stringify(safe)!==JSON.stringify(restored))
+throw Error('Проверка целостности копии не пройдена. Данные не изменены.');
+return {content,summary:summary(restored)};
+}
+const api={validate,merge,unique,summary,prepareBackup};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.LibraryTransfer=api;
 })(typeof window!=='undefined'?window:globalThis);
