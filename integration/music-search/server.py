@@ -66,6 +66,8 @@ from entity_service import EntityService
 ENTITIES=EntityService(SEARCH_SERVICE,BANDCAMP,CATALOG.services["audius"])
 from artist_aggregation import ArtistAggregateService
 ARTISTS=ArtistAggregateService(ENTITIES,CATALOG)
+from musicbrainz_identity import MusicBrainzIdentity
+MUSICBRAINZ=MusicBrainzIdentity()
 from audio_share import AudioShare
 AUDIO_SHARE=AudioShare(ROOT,ENTITIES)
 from migration_service import MigrationService, handle_get as migration_get, handle_post as migration_post
@@ -148,7 +150,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             p=urlparse(self.path)
             if p.path=='/healthz':
-                self.respond(200,{'ok':True,'version':'0.7.10'});return
+                self.respond(200,{'ok':True,'version':'0.7.11'});return
             if p.path.startswith("/open/") and hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
                 self.respond(302,headers={"Location":"/","Set-Cookie":"musiclab_access="+KEY+"; HttpOnly; SameSite=Lax; Path=/"})
                 return
@@ -166,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.10"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.11"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -180,6 +182,15 @@ class Handler(BaseHTTPRequestHandler):
                 if kind not in ('all','artist','album','playlist','track'):
                     self.respond(400,{'error':'Неизвестный тип поиска'});return
                 result=CATALOG.query('audius',q,page,kind) if provider=='audius' else (CATALOG if provider=='all' else BANDCAMP if provider=='bandcamp' else SEARCH_SERVICE).search(q,page,kind)
+                self.respond(200,result);return
+            if p.path=='/api/artists/identity':
+                params=parse_qs(p.query)
+                try:
+                    result=MUSICBRAINZ.resolve(
+                        params.get('name',[''])[0],params.get('source',[''])[0],
+                        params.get('url',[''])[0])
+                except (ValueError,TypeError):
+                    self.respond(400,{'error':'Некорректная проверка исполнителя.'});return
                 self.respond(200,result);return
             if p.path in ('/api/artist','/api/artists/merged'):
                 params=parse_qs(p.query)
@@ -273,7 +284,7 @@ if __name__=="__main__":
     a.add_argument('--host',default='127.0.0.1');args=a.parse_args()
     server=ThreadingHTTPServer((args.host,args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.7.10 — SoundCloud",flush=True)
+    print("Music Lab v0.7.11 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()
