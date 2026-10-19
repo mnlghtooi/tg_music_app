@@ -13,6 +13,10 @@
 6. Проверки backend: `python -m unittest discover -s integration/music-search/tests`, применимые Node/JS-тесты, позже Playwright и iPhone smoke. Не объявлять браузерный или mock-тест доказательством работы фонового звука в Telegram на iPhone.
 7. **После каждого шага** оставлять в PR: что реализовано, тесты, что проверено на iPhone, ограничения, следующий пункт roadmap. Обновлять чекбоксы только для законченных пунктов. Не отмечать весь этап выполненным при частичной реализации.
 
+## Текущая работа P0 — 19.10.2026
+
+- [ ] [PR #18](https://github.com/mnlghtooi/tg_music_app/pull/18) — исправление классификации SoundCloud/Audius/Bandcamp, скрытие preview-only/blocked из поиска и сохранение библиотеки; CI success, **ожидает проверки на iPhone**. После приёмки слить в main и отметить соответствующий пункт этапа 1 выполненным.
+
 ## Статус и точка продолжения — 19.10.2026
 
 - [x] **Консолидация завершена:** PR [#3](https://github.com/mnlghtooi/tg_music_app/pull/3) → [#4](https://github.com/mnlghtooi/tg_music_app/pull/4) → [#6](https://github.com/mnlghtooi/tg_music_app/pull/6) → [#7](https://github.com/mnlghtooi/tg_music_app/pull/7) → [#9](https://github.com/mnlghtooi/tg_music_app/pull/9) → [#13](https://github.com/mnlghtooi/tg_music_app/pull/13) слиты **по порядку в `main`**. Перемотка из PR #11 входит в #13; пользователь подтвердил работу v0.7.8 на iPhone.
