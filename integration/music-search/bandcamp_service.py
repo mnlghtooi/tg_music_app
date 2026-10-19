@@ -134,7 +134,10 @@ class BandcampService:
             response = self.client.get(url); response.raise_for_status()
             if len(response.content) > 4 * 1024 * 1024: raise BandcampError('Слишком большая страница Bandcamp.')
             if 'Client Challenge' in response.text: raise BandcampError('Bandcamp временно ограничил доступ к странице.')
-            parser = PageData(); parser.feed(response.text); return parser
+            parser = PageData(); parser.feed(response.text)
+            from entity_service import Metadata
+            parser.metadata = Metadata(); parser.metadata.feed(response.text)
+            return parser
         return self.cached(('page', url), fetch)
 
     def release_tracks(self, url):

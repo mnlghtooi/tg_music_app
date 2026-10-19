@@ -2,6 +2,10 @@
 (function(root){
 'use strict';
 const id=t=>t.source+':'+t.id;
+function entity(ref,source,kind){
+if(!ref||ref.source!==source||ref.kind!==kind||typeof ref.id!=='string'||!ref.id||ref.id.length>2048||typeof ref.title!=='string'||ref.title.length>1000)return null;
+return {id:ref.id,source,kind,title:ref.title};
+}
 function track(t){
 if(!t||!['soundcloud','bandcamp','audius'].includes(t.source)||typeof t.id!=='string'||!t.id||t.id.length>2048||
 typeof t.title!=='string'||!t.title.trim()||t.title.length>1000||typeof t.artist!=='string'||t.artist.length>1000||
@@ -9,7 +13,7 @@ typeof t.title!=='string'||!t.title.trim()||t.title.length>1000||typeof t.artist
 if(t.duration!==undefined&&(!Number.isFinite(t.duration)||t.duration<0||t.duration>86400))throw Error('Некорректная длительность трека.');
 const artwork={};for(const size of ['480x480','150x150']){const url=t.artwork?.[size];if(typeof url==='string'&&url.startsWith('https://')&&url.length<2048)artwork[size]=url;}
 return {id:t.id,source:t.source,kind:'track',title:t.title,artist:t.artist,duration:t.duration||0,
-artwork:Object.keys(artwork).length?artwork:null,permalink:typeof t.permalink==='string'?t.permalink.slice(0,2048):'',preview:!!t.preview,unavailable:!!t.unavailable};
+artwork:Object.keys(artwork).length?artwork:null,permalink:typeof t.permalink==='string'?t.permalink.slice(0,2048):'',preview:!!t.preview,unavailable:!!t.unavailable,artist_ref:entity(t.artist_ref,t.source,'artist'),album_ref:entity(t.album_ref,t.source,'album')};
 }
 function unique(items){return [...new Map(items.map(t=>[id(t),t])).values()];}
 function validate(data){
