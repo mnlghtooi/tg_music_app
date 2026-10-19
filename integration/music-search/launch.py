@@ -42,6 +42,49 @@ def restart_previous():
         except OSError:return
         time.sleep(.1)
     raise RuntimeError('The previous server is still listening on port 8765.')
+def probe_public_tunnel(hostname):
+    """Check a temporary public HTTPS route, not merely the connector status."""
+    if not re.fullmatch(r'[a-z0-9-]+\.trycloudflare\.com', hostname):
+        raise ValueError('Unexpected Quick Tunnel hostname')
+    request=urllib.request.Request('https://'+hostname+'/healthz',
+        headers={'Cache-Control':'no-cache','Accept':'application/json'})
+    with urllib.request.urlopen(request,timeout=7) as response:
+        if response.status!=200:
+            return False
+        payload=json.load(response)
+        return isinstance(payload,dict) and payload.get('ok') is True
+
+
+def announce_public_tunnel(hostname, key, stop_event=None, pause=5, progress_every=12):
+    """Compose the private link automatically; retry HTTPS until ready or shutdown.
+
+    Quick Tunnels can register before public DNS is available. A transient
+    lookup error must never leave the launcher permanently without PHONE_URL.
+    """
+    stop_event=stop_event if stop_event is not None else threading.Event()
+    phone_url='https://'+hostname+'/open/'+key
+    print('PHONE_URL_PENDING='+phone_url,flush=True)
+    print('Checking public HTTPS automatically; no manual URL assembly needed.',flush=True)
+    attempts=0
+    while not stop_event.is_set():
+        try:
+            if probe_public_tunnel(hostname):
+                print('PHONE_URL='+phone_url,flush=True)
+                print('Public HTTPS health check passed. Open PHONE_URL on iPhone.',flush=True)
+                return True
+        except (OSError,ValueError):
+            pass
+        attempts+=1
+        if attempts==1:
+            print('Public DNS/HTTPS not ready yet; retrying automatically.',flush=True)
+        elif progress_every and attempts%progress_every==0:
+            print('Still waiting for public DNS/HTTPS; retrying automatically. '
+                  'If this persists, check VPN/DNS. Local Music Lab remains available.',flush=True)
+        if stop_event.wait(pause):
+            break
+    return False
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--local-only",action="store_true")
@@ -59,10 +102,11 @@ def main():
     threading.Thread(target=http.serve_forever,daemon=True).start()
     local="http://127.0.0.1:8765/open/"+server.KEY
     threading.Thread(target=server.warm_search,daemon=True).start()
-    print("Music Lab 0.7.9 is running.",flush=True)
+    print("Music Lab 0.7.10 is running.",flush=True)
     print("Computer: "+local,flush=True)
     if not args.no_browser:webbrowser.open(local)
     tunnel=None
+    tunnel_check_stop=threading.Event()
     try:
         if not args.local_only:
             tools=ROOT/".tools";tools.mkdir(exist_ok=True)
@@ -74,16 +118,27 @@ def main():
                 temp.replace(exe)
             flags=subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0
             tunnel=subprocess.Popen([str(exe),"tunnel","--url","http://127.0.0.1:8765","--no-autoupdate","--protocol","http2"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding="utf-8",errors="replace",creationflags=flags)
-            found=False
+            hostname=None
+            registered=False
+            verification_started=False
             for line in tunnel.stdout:
-                match=re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",line)
-                if match and not found:
-                    found=True
-                    public=match.group(0)+"/open/"+server.KEY
-                    print("PHONE_URL="+public,flush=True)
-                    print("Open this private HTTPS link on your iPhone. Keep this window open.",flush=True)
-                if "ERR" in line:print("Tunnel: "+line.strip(),flush=True)
-            if not found:print("HTTPS tunnel unavailable. Local browser still works.",flush=True)
+                match=re.search(r"https://([a-z0-9-]+\.trycloudflare\.com)",line)
+                if match and not hostname:
+                    hostname=match.group(1)
+                    print('Quick Tunnel address created: '+hostname+
+                          ' (waiting for registered connection and public HTTPS health check)',flush=True)
+                if 'Registered tunnel connection' in line:
+                    registered=True
+                    print('Cloudflare tunnel connection registered.',flush=True)
+                if hostname and registered and not verification_started:
+                    verification_started=True
+                    threading.Thread(target=announce_public_tunnel,
+                        args=(hostname,server.KEY,tunnel_check_stop),daemon=True).start()
+                if 'ERR' in line:
+                    print('Tunnel: '+line.strip(),flush=True)
+            tunnel_check_stop.set()
+            if not hostname or not registered:
+                print('HTTPS tunnel did not register; local Music Lab still works.',flush=True)
         while True:time.sleep(1)
     except KeyboardInterrupt:pass
     except Exception as exc:
@@ -92,6 +147,7 @@ def main():
             while True:time.sleep(1)
         except KeyboardInterrupt:pass
     finally:
+        tunnel_check_stop.set()
         if tunnel:tunnel.terminate()
         http.shutdown()
 if __name__=="__main__":main()

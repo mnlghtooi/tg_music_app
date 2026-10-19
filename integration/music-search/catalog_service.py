@@ -45,8 +45,12 @@ class AudiusSearch:
             'artist_ref': {'id': str(user['id']), 'kind': 'artist', 'source': 'audius', 'title': user.get('name') or ''} if user.get('id') else None}
 
 
+from music_providers import catalog_sources
+from artist_search_groups import group_artist_results
+
+
 class CatalogService:
-    SOURCES = ('soundcloud', 'bandcamp', 'audius')
+    SOURCES = catalog_sources()
 
     def __init__(self, soundcloud, bandcamp, audius=None):
         self.services = {'soundcloud': soundcloud, 'bandcamp': bandcamp,
@@ -111,12 +115,17 @@ class CatalogService:
         if not isinstance(page, int) or not 1 <= page <= 100: raise ValueError('Invalid page')
         if kind not in ('all', 'artist', 'album', 'playlist', 'track'): raise ValueError('Invalid type')
         sources = self.SOURCES if kind in ('all', 'track') else ('soundcloud', 'bandcamp')
-        needed = page * 10 + 1
+        # Artist name-only candidates may collapse into a single *display* row.
+        # Fetch a bounded lookahead before slicing so pagination is based on
+        # grouped rows, not the providers' independent page boundaries.
+        grouping = kind in ('all', 'artist') and len(sources) > 1
+        needed = page * 10 + 1 + (10 if grouping else 0)
+        max_provider_page = min(page + (2 if grouping else 1), 100)
         def collect(source):
             items = []
             more = True
             provider_page = 1
-            while more and len(items) < needed and provider_page <= min(page + 1, 100):
+            while more and len(items) < needed and provider_page <= max_provider_page:
                 batch = self.query(source, query, provider_page, kind)
                 items.extend(batch['data'])
                 more = bool(batch.get('has_more')) and bool(batch['data'])
@@ -128,6 +137,8 @@ class CatalogService:
         # discarded by fetching ten from each service and slicing that batch.
         combined = self.unique([item for group in zip_longest(
             *(results.get(source, ([], False))[0] for source in sources)) for item in group if item is not None])
+        if grouping:
+            combined = group_artist_results(combined)
         offset = (page - 1) * 10
         return {'data': combined[offset:offset + 10], 'page': page, 'page_size': 10,
                 'has_more': page < 100 and (len(combined) > offset + 10 or any(v[1] for v in results.values())),
