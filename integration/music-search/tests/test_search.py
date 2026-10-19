@@ -70,3 +70,18 @@ class SearchTests(unittest.TestCase):
   for kind,item,page in [('other','2',1),('artist','../x',1),('playlist','2',0)]:
    with self.assertRaises(ValueError):service.browse(kind,item,page)
 if __name__=='__main__':unittest.main()
+
+
+class FilterTests(unittest.TestCase):
+ def test_endpoints_cache_and_album_kind(self):
+  seen=[]
+  def handler(r):
+   seen.append(r.url.path)
+   return httpx.Response(200,json={'collection':[{'id':1,'kind':'playlist','is_album':True,'title':'Album'}]})
+  service=SearchService(lambda *a:'public',httpx.Client(transport=httpx.MockTransport(handler)))
+  for kind in ['all','artist','album','playlist','track']:
+   service.search('same',kind=kind)
+  self.assertEqual(seen,['/search','/search/users','/search/albums','/search/playlists','/search/tracks'])
+  self.assertEqual(service.search('same',kind='album')['data'][0]['kind'],'album')
+  self.assertEqual(len(seen),5)
+  with self.assertRaises(ValueError): service.search('test',kind='invalid')

@@ -19,9 +19,11 @@ class SearchService:
         self.track_metadata = OrderedDict()
         self.slots = threading.BoundedSemaphore(4)
 
-    def search(self, query, page=1):
-        return self._cached(('search', ' '.join(query.casefold().split()), page),
-                            lambda: self._search(query, page))
+    def search(self, query, page=1, kind='all'):
+        if kind not in ('all', 'artist', 'album', 'playlist', 'track'):
+            raise ValueError('Invalid search type')
+        return self._cached(('search', ' '.join(query.casefold().split()), page, kind),
+                            lambda: self._search(query, page, kind))
 
     @staticmethod
     def validate_page(page):
@@ -65,9 +67,10 @@ class SearchService:
                 return hit[1]
         return self._get('tracks/' + track_id)
 
-    def _search(self, query, page):
+    def _search(self, query, page, kind='all'):
         self.validate_page(page)
-        body = self._get('search', {'q': query, 'limit': 11, 'offset': (page - 1) * 10,
+        path = {'artist': 'search/users', 'album': 'search/albums', 'playlist': 'search/playlists', 'track': 'search/tracks'}.get(kind, 'search')
+        body = self._get(path, {'q': query, 'limit': 11, 'offset': (page - 1) * 10,
                                     'linked_partitioning': 1})
         raw = [t for t in body.get('collection', []) if t and t.get('id')]
         return {'data': [self.normalize(t) for t in raw[:10]],
@@ -75,7 +78,7 @@ class SearchService:
 
     def browse(self, kind, item_id, page=1):
         self.validate_page(page)
-        if kind not in ('artist', 'playlist') or not str(item_id).isdigit() or len(str(item_id)) > 20:
+        if kind not in ('artist', 'playlist', 'album') or not str(item_id).isdigit() or len(str(item_id)) > 20:
             raise ValueError('Invalid collection')
         return self._cached((kind, str(item_id), page), lambda: self._browse(kind, str(item_id), page))
 
@@ -141,7 +144,7 @@ class SearchService:
         kind = track.get('kind', 'track')
         if kind in ('user', 'playlist'):
             art = track.get('artwork_url') or track.get('avatar_url') or (track.get('user') or {}).get('avatar_url')
-            return {'id': str(track['id']), 'kind': 'artist' if kind == 'user' else 'playlist',
+            return {'id': str(track['id']), 'kind': 'artist' if kind == 'user' else 'album' if track.get('is_album') or track.get('set_type') == 'album' else 'playlist',
                     'title': (track.get('username') or 'SoundCloud') if kind == 'user' else track.get('title') or 'Без названия',
                     'artist': '' if kind == 'user' else (track.get('user') or {}).get('username', ''),
                     'source': 'soundcloud', 'permalink': track.get('permalink_url') or '',

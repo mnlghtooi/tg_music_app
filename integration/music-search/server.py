@@ -116,7 +116,10 @@ class Handler(BaseHTTPRequestHandler):
                 provider=parse_qs(p.query).get('source',['soundcloud'])[0]
                 if provider not in ('soundcloud','bandcamp'):
                     self.respond(400,{'error':'Неизвестный источник поиска'});return
-                self.respond(200,BANDCAMP.search(q,page) if provider=='bandcamp' else search(q,page));return
+                kind=parse_qs(p.query).get('type',['all'])[0]
+                if kind not in ('all','artist','album','playlist','track'):
+                    self.respond(400,{'error':'Неизвестный тип поиска'});return
+                self.respond(200,(BANDCAMP if provider=='bandcamp' else SEARCH_SERVICE).search(q,page,kind));return
             if p.path=="/api/collection":
                 params=parse_qs(p.query)
                 kind=params.get('kind',[''])[0];item_id=params.get('id',[''])[0]
