@@ -36,21 +36,21 @@ jobs:
             echo "DELETED $branch"
             ((deleted+=1))
           done <<'BRANCHES'
-docs/agent-roadmap-20261019|a4e9a8d33b1717c5ac59aef7a6b5707faf24386b|10
-docs/clarify-mini-player-seek|9cbdf65338aa7424c50aaf0247dcd6a4b767ee14|12
-docs/migration-prototype-status|8cf2e843515ffc82f53750463c5b07d396a73a5c|8
-docs/no-archive-updates|2239d4fd1142268f1379cffbe367731ab77bbdcf|5
-docs/record-consolidated-main|2f3ab0c0ed608db0ee6af14e1533c075d0c00644|16
-docs/roadmap-pr-audit-status|702ea845d9bb358862fd0f6da829d047efbe8847|15
-feature/artist-album-cards|e4b8c3ac3300dccd138c5da89520437ae9134a75|9
-feature/artist-overview-audio-share|68a8ab609a4b7ac42319330bf4303050e29e38b9|13
-feature/automatic-cross-service-matching|eebaa0f62ff38c05a3e85864d4b2ef46570a8595|7
-feature/bandcamp-repo-deploy|151aa4952e130151e44e871c1ca5b2a6869e732b|3
-feature/mini-player-long-press-seek|4462e11feb7b234759f1b6a2e5304812308a184c|11
-feature/multi-source-artist-architecture|3be201a90c097c44ef2c823653a1695eadb30b08|22
-feature/public-playlist-import|ba898b7c1d365e8af7da00599b03301f2266317f|6
-fix/bandcamp-search-filters|a94c304ecb98e9ff0f15cf2e23ff0946a61a701c|4
-fix/track-availability-previews|1105ddecf4e535e058ddef53e5917b2c2cdbf071|18
-research/vk-music-feasibility|45a2ec6b2aa90174bf0a2c101182111ed2dccfc8|20
-BRANCHES
+          docs/agent-roadmap-20261019|a4e9a8d33b1717c5ac59aef7a6b5707faf24386b|10
+          docs/clarify-mini-player-seek|9cbdf65338aa7424c50aaf0247dcd6a4b767ee14|12
+          docs/migration-prototype-status|8cf2e843515ffc82f53750463c5b07d396a73a5c|8
+          docs/no-archive-updates|2239d4fd1142268f1379cffbe367731ab77bbdcf|5
+          docs/record-consolidated-main|2f3ab0c0ed608db0ee6af14e1533c075d0c00644|16
+          docs/roadmap-pr-audit-status|702ea845d9bb358862fd0f6da829d047efbe8847|15
+          feature/artist-album-cards|e4b8c3ac3300dccd138c5da89520437ae9134a75|9
+          feature/artist-overview-audio-share|68a8ab609a4b7ac42319330bf4303050e29e38b9|13
+          feature/automatic-cross-service-matching|eebaa0f62ff38c05a3e85864d4b2ef46570a8595|7
+          feature/bandcamp-repo-deploy|151aa4952e130151e44e871c1ca5b2a6869e732b|3
+          feature/mini-player-long-press-seek|4462e11feb7b234759f1b6a2e5304812308a184c|11
+          feature/multi-source-artist-architecture|3be201a90c097c44ef2c823653a1695eadb30b08|22
+          feature/public-playlist-import|ba898b7c1d365e8af7da00599b03301f2266317f|6
+          fix/bandcamp-search-filters|a94c304ecb98e9ff0f15cf2e23ff0946a61a701c|4
+          fix/track-availability-previews|1105ddecf4e535e058ddef53e5917b2c2cdbf071|18
+          research/vk-music-feasibility|45a2ec6b2aa90174bf0a2c101182111ed2dccfc8|20
+          BRANCHES
           echo "Cleanup complete. Deleted=$deleted Skipped=$skipped"
