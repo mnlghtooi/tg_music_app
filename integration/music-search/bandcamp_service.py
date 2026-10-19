@@ -72,7 +72,7 @@ class BandcampService:
     def __init__(self, tokenize, client=None):
         self.tokenize = tokenize
         self.client = client or httpx.Client(http2=True, timeout=httpx.Timeout(15, connect=5),
-            headers={'User-Agent': 'Mozilla/5.0'},
+            headers={'User-Agent': 'MusicLab/0.7.3'},
             limits=httpx.Limits(max_connections=6, max_keepalive_connections=4))
         self.lock = threading.Lock(); self.cache = OrderedDict(); self.pending = {}
         self.slots = threading.BoundedSemaphore(3)
@@ -106,24 +106,27 @@ class BandcampService:
         return {'data': items[offset:offset + 10], 'page': page, 'page_size': 10,
                 'has_more': len(items) > offset + 10, **extra}
 
-    def search(self, query, page=1):
+    def search(self, query, page=1, kind='all'):
+        if kind not in ('all', 'artist', 'album', 'playlist', 'track'):
+            raise ValueError('Invalid search type')
+        if kind == 'playlist': return self.page([], page)
         def fetch():
             response = self.client.post('https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic',
-                json={'search_text': query, 'search_filter': '', 'full_page': True, 'fan_id': None})
+                json={'search_text': query, 'search_filter': {'artist': 'b', 'album': 'a', 'track': 't'}.get(kind, ''), 'full_page': True, 'fan_id': None})
             response.raise_for_status()
             if 'application/json' not in response.headers.get('content-type', ''):
                 raise BandcampError('Bandcamp не предоставил поиск. Попробуй позднее.')
             items = []
             for raw in response.json().get('auto', {}).get('results', []):
-                kind = {'t': 'track', 'a': 'album', 'b': 'artist'}.get(raw.get('type'))
-                if not kind: continue
-                try: url = public_url(urljoin(raw.get('item_url_root', ''), raw.get('item_url_path') or ''), kind)
+                item_kind = {'t': 'track', 'a': 'album', 'b': 'artist'}.get(raw.get('type'))
+                if not item_kind or kind != 'all' and item_kind != kind: continue
+                try: url = public_url(urljoin(raw.get('item_url_root', ''), raw.get('item_url_path') or ''), item_kind)
                 except ValueError: continue
-                items.append({'id': identifier(url), 'kind': kind, 'title': raw.get('name') or 'Без названия',
+                items.append({'id': identifier(url), 'kind': item_kind, 'title': raw.get('name') or 'Без названия',
                     'artist': raw.get('band_name') or '', 'source': 'bandcamp', 'permalink': url,
                     'duration': 0, 'preview': False, 'artwork': {'480x480': raw['img']} if raw.get('img') else None})
             return items
-        items = self.cached(('search', ' '.join(query.casefold().split())), fetch)
+        items = self.cached(('search', ' '.join(query.casefold().split()), kind), fetch)
         return self.page(items, page, result_limit=50)
 
     def page_data(self, url):

@@ -73,3 +73,26 @@ class BandcampTests(unittest.TestCase):
         with self.assertRaises(BandcampError): service.search('test')
         with self.assertRaises(BandcampError): service.browse('album', identifier('https://artist.bandcamp.com/album/x'))
         self.assertFalse(service.pending)
+
+
+class FilterTests(unittest.TestCase):
+    def test_filter_sent_to_provider_and_cache_isolated(self):
+        seen = []
+        def handler(request):
+            kind = json.loads(request.content)['search_filter']
+            seen.append(kind)
+            return httpx.Response(200, json={'auto': {'results': [
+                {'type': 't', 'name': 'Song', 'item_url_root': 'https://artist.bandcamp.com', 'item_url_path': '/track/song'},
+                {'type': 'a', 'name': 'Album', 'item_url_root': 'https://artist.bandcamp.com', 'item_url_path': '/album/album'}]}})
+        service = BandcampService(lambda url: '/token', httpx.Client(transport=httpx.MockTransport(handler)))
+        self.assertEqual(len(service.search('test')['data']), 2)
+        self.assertEqual([x['kind'] for x in service.search('test', kind='track')['data']], ['track'])
+        service.search('test', kind='track')
+        self.assertEqual(seen, ['', 't'])
+        self.assertEqual(service.search('test', kind='playlist')['data'], [])
+        with self.assertRaises(ValueError): service.search('test', kind='invalid')
+
+    def test_default_client_identifies_app(self):
+        service = BandcampService(lambda url: '/token')
+        self.assertEqual(service.client.headers['User-Agent'], 'MusicLab/0.7.3')
+        service.client.close()
