@@ -60,6 +60,8 @@ from bandcamp_service import BandcampService, BandcampError
 SEARCH_SERVICE=SearchService(search_credentials)
 STREAM_SERVICE=StreamService(SEARCH_SERVICE,media_token)
 BANDCAMP=BandcampService(media_token)
+from migration_service import MigrationService, handle_get as migration_get, handle_post as migration_post
+MIGRATION=MigrationService(SEARCH_SERVICE,BANDCAMP)
 
 def warm_search():
     try: search_credentials()
@@ -91,22 +93,32 @@ class Handler(BaseHTTPRequestHandler):
             return "musiclab_access" in c and hmac.compare_digest(c["musiclab_access"].value,KEY)
         except Exception: return False
     def do_HEAD(self): self.do_GET()
+    def do_POST(self):
+        if not self.authenticated():
+            self.close_connection=True
+            self.respond(403,{'error':'Открой личную ссылку Music Lab.'});return
+        if not self.path.startswith('/api/migration/'):
+            self.respond(404,{'error':'Not found'});return
+        migration_post(self,MIGRATION)
     def do_GET(self):
         try:
             p=urlparse(self.path)
             if p.path=='/healthz':
-                self.respond(200,{'ok':True,'version':'0.7.2'});return
+                self.respond(200,{'ok':True,'version':'0.7.3'});return
             if p.path.startswith("/open/") and hmac.compare_digest(p.path.removeprefix("/open/").strip("/"),KEY):
                 self.respond(302,headers={"Location":"/","Set-Cookie":"musiclab_access="+KEY+"; HttpOnly; SameSite=Lax; Path=/"})
                 return
             if not self.authenticated():
                 self.respond(403,{"error":"Открой личную ссылку из окна запуска Music Lab."});return
+            if migration_get(self,p,MIGRATION):return
+            if p.path in ('/library_transfer.js','/migration_ui.js'):
+                self.respond(200,(ROOT/p.path.lstrip('/')).read_bytes(),'text/javascript; charset=utf-8');return
             if p.path=="/":
                 self.respond(200,(ROOT/"index.html").read_bytes(),"text/html; charset=utf-8");return
             if p.path=="/hls.min.js":
                 self.respond(200,(ROOT/"hls.min.js").read_bytes(),"text/javascript");return
             if p.path=="/api/health":
-                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.2"});return
+                self.respond(200,{"ok":True,"provider":"soundcloud","version":"0.7.3"});return
             if p.path=="/api/search":
                 q=parse_qs(p.query).get("q",[""])[0].strip()
                 if not 1<=len(q)<=150: self.respond(400,{"error":"Введи название или исполнителя (до 150 символов)."});return
@@ -187,7 +199,7 @@ if __name__=="__main__":
     a.add_argument('--host',default='127.0.0.1');args=a.parse_args()
     server=ThreadingHTTPServer((args.host,args.port),Handler)
     threading.Thread(target=warm_search,daemon=True).start()
-    print("Music Lab v0.7.2 — SoundCloud",flush=True)
+    print("Music Lab v0.7.3 — SoundCloud",flush=True)
     print("LOCAL_URL=http://127.0.0.1:"+str(args.port)+"/open/"+KEY,flush=True)
     print("Держи это окно открытым. Ctrl+C — остановка.",flush=True)
     server.serve_forever()

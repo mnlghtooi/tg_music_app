@@ -10,7 +10,7 @@ if errorlevel 1 (
   .venv\Scripts\python.exe -m pip install -r requirements.txt
   if errorlevel 1 goto fail
 )
-.venv\Scripts\python.exe launch.py
+.venv\Scripts\python.exe launch.py --restart
 if errorlevel 1 goto fail
 exit /b
 :fail
