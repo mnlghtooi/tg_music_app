@@ -157,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.authenticated():
                 self.respond(403,{"error":"Открой личную ссылку из окна запуска Music Lab."});return
             if migration_get(self,p,MIGRATION):return
-            if p.path in ('/library_transfer.js','/migration_ui.js','/audio_share_ui.js'):
+            if p.path in ('/library_transfer.js','/migration_ui.js','/audio_share_ui.js','/mini_seek.js'):
                 self.respond(200,(ROOT/p.path.lstrip('/')).read_bytes(),'text/javascript; charset=utf-8');return
             if p.path=="/":
                 self.respond(200,(ROOT/"index.html").read_bytes(),"text/html; charset=utf-8");return
